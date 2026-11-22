@@ -21,6 +21,8 @@
   .chips { display: flex; gap: 6px; overflow-x: auto; flex: 1; min-width: 0; scrollbar-width: none; }
   .chips::-webkit-scrollbar { display: none; }
   #title { font-weight: 700; font-size: 14px; flex: none; margin-right: 2px; }
+  #conn { flex: 0 1 auto; min-width: 0; max-width: 46%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: block; }
+  @media (max-width: 600px) { #title, .wide { display: none; } #conn { max-width: 40%; } }
   #conn { flex: none; }
   #conn.ok { border-color: var(--acc); color: #bbf7d0; }
   #conn.busy { border-color: var(--warn); color: #fde68a; }
@@ -121,6 +123,11 @@
   button.warnb.sel { background: #713f12; border-color: var(--warn); }
   tr.out td { opacity: .42; text-decoration: line-through; }
   .tile .spr { font-size: 11px; opacity: .62; white-space: nowrap; font-variant-numeric: tabular-nums; }
+  /* launch angles */
+  table.launch input.ln { width: 64px; min-height: 30px; padding: 3px 6px; font-size: 14px; }
+  table.launch td { vertical-align: middle; }
+  button.mini { padding: 2px 8px; min-height: 24px; font-size: 12px; border-radius: 7px; }
+  sup { font-size: 9px; opacity: .7; margin-left: 1px; }
   /* distances */
   table.dist td { padding: 4px 6px; vertical-align: top; }
   table.dist td.dc { cursor: pointer; border-radius: 6px; }
@@ -147,7 +154,7 @@
 <canvas id="c"></canvas>
 
 <div id="hud">
-  <div class="bar"><span id="title">Range Lab</span><div class="chips" id="players"></div><button id="addPlayer" title="Add a player">+ Player</button><button id="conn">Connect</button></div>
+  <div class="bar"><span id="title">Range Lab</span><div class="chips" id="players"></div><button id="addPlayer" title="Add a player">+<span class="wide">&nbsp;Player</span></button><button id="conn">Connect</button></div>
   <div class="bar"><span class="lbl">Club</span><div class="chips" id="clubs"></div><div class="seg" id="swings" role="group" aria-label="Swing length"></div></div>
   <div class="bar" id="live"></div>
 </div>
@@ -1091,6 +1098,10 @@ const RawTap = (() => {
     }
     if (!b.length) return { kind: "disconnect", summary: "Empty packet (the Omni is disconnecting)", fields: {} };
     if (b[0] === 0x91) return { kind: "battery", summary: `Battery ${b[1]}%`, fields: { battery: b[1] } };
+    if (b[0] === 0x71) { // every 3 s; bytes 7-8 count the seconds since the Omni was switched on (found with the relay)
+      const up = b.length >= 9 ? (b[7] << 8) | b[8] : null;
+      return { kind: "heartbeat", summary: `Heartbeat: on for ${up == null ? "?" : `${Math.floor(up / 60)} min ${up % 60} s`}`, fields: { uptimeS: up } };
+    }
     if (b[0] !== 0x11) return { kind: "unknown", summary: "Unrecognised packet", fields: {} };
     switch (b[1]) {
       case 1: return { kind: "status", summary: `Status: ${b[3] === 1 || b[3] === 2 ? "ready" : "not ready"}, ball ${b[4] === 1 ? "detected" : "not detected"}`, fields: { ready: b[3], detected: b[4] } };
@@ -1215,10 +1226,12 @@ const BANDS = (() => {
     return { speedMph: Math.round(v * 10) / 10, vla: Math.round(Math.max(4, p.launch + (1 - a) * 4) * 10) / 10, hla: 0, spinRpm: Math.round(p.spin * a), axisDeg: 0 };
   }
 
-  // fly(shot) -> { carry, apex, descent } in yards / degrees
-  function solve(id, club, yd, fly) {
-    const p = profile(id)[club];
+  // fly(shot) -> { carry, apex, descent } in yards / degrees. launch: the player's own full-swing
+  // launch angle for this club, used instead of the band's when they've set one.
+  function solve(id, club, yd, fly, launch = null) {
+    let p = profile(id)[club];
     if (!p) return null;
+    if (launch != null && isFinite(launch)) p = { ...p, launch: +launch, own: true };
     const lo = 0.35 * p.ball, hi = 1.25 * p.ball;
     const at = v => { const s = shotAt(p, v); return { shot: s, ...fly(s) }; };
     const top = at(hi), bottom = at(lo);
@@ -1255,7 +1268,8 @@ const BANDS = (() => {
 //   importFile(bytes, name)                                  replace everything with a file's contents
 //
 // Shapes passed across the interface:
-//   player = { id, name, hand: "R"|"L", club, swing, band, practiceYd, practiceOn, bag: [club] }
+//   player = { id, name, hand: "R"|"L", club, swing, band, practiceYd, practiceOn, bag: [club],
+//              launch: { club: degrees } }                   // the player's own launch angle per club
 //   shot   = { id, player, club, swing: "full"|"2/3"|"1/3", excluded: bool, src: "omni"|"relay"|"frp"|"manual", ts,
 //              ball: { speedMph, vla, hla, spinRpm, axisDeg, backSpin, sideSpin },   // measured
 //              cd: { Speed, Path, FaceToTarget, AngleOfAttack, Loft, HorizontalFaceImpact,
@@ -1264,9 +1278,11 @@ const BANDS = (() => {
 //   event  = { id, ts, source: "omni"|"flighthook", direction: "in"|"out"|"read", kind,
 //              hex, text, decoded, shotId }
 //
-// SqliteStore is the real one (SQLite compiled to WebAssembly, saved in the browser's
-// IndexedDB). LocalStore is a fallback that keeps the same data as JSON if SQLite can't start.
-// To move to another database, write a class with these methods and change makeStore().
+// SqliteStore is SQLite compiled to WebAssembly, saved in the browser's IndexedDB. HubStore is the
+// NUC's shared database (the relay's /api), used when Range Lab is opened from the NUC, so every
+// app and device sees the same players and shots; there the NUC records the Omni's shots itself.
+// LocalStore is a fallback that keeps the same data as JSON if SQLite can't start.
+// The NUC's tables are exactly these (relay/omni_relay/data.py, checked by its tests).
 // ---------------------------------------------------------------------------------------------
 
 const BALL_COLS = [["speedMph", "ball_speed_mph"], ["vla", "launch_deg"], ["hla", "direction_deg"], ["spinRpm", "spin_rpm"], ["axisDeg", "spin_axis_deg"], ["backSpin", "back_spin_rpm"], ["sideSpin", "side_spin_rpm"]];
@@ -1302,6 +1318,11 @@ const MIGRATIONS = [
   `ALTER TABLE shots ADD COLUMN swing TEXT NOT NULL DEFAULT 'full';
    ALTER TABLE shots ADD COLUMN excluded INTEGER NOT NULL DEFAULT 0;
    ALTER TABLE players ADD COLUMN swing TEXT NOT NULL DEFAULT 'full';`,
+  // 3: each player's own launch angle for each club
+  `CREATE TABLE club_settings (
+     player_id TEXT NOT NULL REFERENCES players(id) ON DELETE CASCADE,
+     club TEXT NOT NULL, launch_deg REAL,
+     PRIMARY KEY (player_id, club));`,
 ];
 const SWING_IDS = ["full", "2/3", "1/3"];
 const swingId = v => (SWING_IDS.includes(v) ? v : "full");
@@ -1327,7 +1348,7 @@ function rowToEvent(r) {
   let decoded = null; try { decoded = r.decoded ? JSON.parse(r.decoded) : null; } catch {}
   return { id: r.id, ts: r.ts, source: r.source, direction: r.direction, kind: r.kind, hex: r.hex, text: r.text, decoded, shotId: r.shot_id };
 }
-const KEEPALIVE = ["keepalive", "status", "battery"];
+const KEEPALIVE = ["keepalive", "status", "battery", "heartbeat"];
 
 // ------------------------------- saving bytes in the browser --------------------------------
 const Persist = {
@@ -1341,12 +1362,17 @@ const Persist = {
 };
 
 // ------------------------------------- SQLite -----------------------------------------------
+let sqlJsModule = null;
+async function sqlJs() {
+  if (!sqlJsModule) sqlJsModule = await initSqlJs({ wasmBinary: Uint8Array.from(atob(SQLJS_WASM_B64), c => c.charCodeAt(0)) });
+  return sqlJsModule;
+}
 class SqliteStore {
-  async open() {
-    const wasm = Uint8Array.from(atob(SQLJS_WASM_B64), c => c.charCodeAt(0));
-    this.SQL = await initSqlJs({ wasmBinary: wasm });
-    try { this.persist = await Persist.idb(); } catch { this.persist = Persist.memory(); }
-    let bytes = null; try { bytes = await this.persist.load(); } catch {}
+  // open() uses the browser's saved database; open({ persist: Persist.memory(), bytes }) reads a file without touching it
+  async open({ persist = null, bytes } = {}) {
+    this.SQL = await sqlJs();
+    if (persist) this.persist = persist; else { try { this.persist = await Persist.idb(); } catch { this.persist = Persist.memory(); } }
+    if (bytes === undefined) { bytes = null; try { bytes = await this.persist.load(); } catch {} }
     this.db = bytes ? new this.SQL.Database(bytes) : new this.SQL.Database();
     this.fresh = !bytes;
     this.pragmas(); this.migrate();
@@ -1373,7 +1399,9 @@ class SqliteStore {
   async loadPlayers() {
     const bags = {};
     for (const r of this.all("SELECT player_id, club FROM bag_clubs")) (bags[r.player_id] = bags[r.player_id] || []).push(r.club);
-    return this.all("SELECT * FROM players ORDER BY sort, created_at").map(r => ({ id: r.id, name: r.name, hand: r.hand, club: r.club, swing: swingId(r.swing), band: r.band, practiceYd: r.practice_yd, practiceOn: !!r.practice_on, bag: bags[r.id] || [] }));
+    const launch = {};
+    for (const r of this.all("SELECT player_id, club, launch_deg FROM club_settings WHERE launch_deg IS NOT NULL")) (launch[r.player_id] = launch[r.player_id] || {})[r.club] = r.launch_deg;
+    return this.all("SELECT * FROM players ORDER BY sort, created_at").map(r => ({ id: r.id, name: r.name, hand: r.hand, club: r.club, swing: swingId(r.swing), band: r.band, practiceYd: r.practice_yd, practiceOn: !!r.practice_on, bag: bags[r.id] || [], launch: launch[r.id] || {} }));
   }
   async savePlayer(p) {
     const sort = this.get("SELECT sort FROM players WHERE id = ?", [p.id]);
@@ -1385,6 +1413,8 @@ class SqliteStore {
         [p.id, p.name, p.hand, p.club, swingId(p.swing), p.band || null, num(p.practiceYd), p.practiceOn ? 1 : 0, n, Date.now()]);
       this.db.run("DELETE FROM bag_clubs WHERE player_id = ?", [p.id]);
       for (const c of p.bag) this.db.run("INSERT INTO bag_clubs (player_id, club) VALUES (?, ?)", [p.id, c]);
+      this.db.run("DELETE FROM club_settings WHERE player_id = ?", [p.id]);
+      for (const [c, deg] of Object.entries(p.launch || {})) if (num(deg) != null) this.db.run("INSERT INTO club_settings (player_id, club, launch_deg) VALUES (?, ?, ?)", [p.id, c, num(deg)]);
       this.db.exec("COMMIT");
     } catch (e) { this.db.exec("ROLLBACK"); throw e; }
     this.dirty();
@@ -1439,7 +1469,7 @@ class LocalStore {
     return { kind: "Browser storage", detail: `SQLite couldn't start here${reason ? ` (${reason})` : ""}, so data is kept as JSON in this browser` };
   }
   save() { clearTimeout(this.t); this.t = setTimeout(() => { try { localStorage.setItem(this.key, JSON.stringify(this.d)); } catch (e) { if (this.onError) this.onError(e); } }, 400); }
-  async loadPlayers() { return structuredClone(this.d.players).map(p => ({ ...p, swing: swingId(p.swing) })); }
+  async loadPlayers() { return structuredClone(this.d.players).map(p => ({ ...p, swing: swingId(p.swing), launch: p.launch || {} })); }
   async savePlayer(p) { const i = this.d.players.findIndex(x => x.id === p.id); const c = structuredClone(p); i < 0 ? this.d.players.push(c) : (this.d.players[i] = c); this.save(); }
   async deletePlayer(id) { this.d.players = this.d.players.filter(p => p.id !== id); const gone = new Set(this.d.shots.filter(s => s.player === id).map(s => s.id)); this.d.shots = this.d.shots.filter(s => !gone.has(s.id)); this.d.raw.forEach(e => { if (gone.has(e.shotId)) e.shotId = null; }); this.save(); }
   async loadShots() { return structuredClone(this.d.shots).map(s => ({ ...s, swing: swingId(s.swing), excluded: !!s.excluded })); }
@@ -1455,7 +1485,66 @@ class LocalStore {
   async importFile(bytes) { const d = JSON.parse(new TextDecoder().decode(bytes)); if (!d.players || !d.shots) throw new Error("That file isn't a Range Lab export"); this.d = d; this.save(); }
 }
 
-async function makeStore() {
+// ------------------------- the NUC: one shared database for every app ------------------------
+class HubStore {
+  constructor() { this.kind = "NUC"; this.client = Math.random().toString(36).slice(2, 10); this.session = null; this.fresh = false; }
+  async api(method, path, body) {
+    const r = await fetch(path, { method, cache: "no-store", headers: { "X-Omni-Client": this.client, ...(body === undefined ? {} : { "Content-Type": "application/json" }) }, body: body === undefined ? undefined : JSON.stringify(body) });
+    const j = (r.headers.get("content-type") || "").includes("json") ? await r.json() : null;
+    if (!r.ok) throw new Error((j && j.error) || `the NUC answered ${r.status}`);
+    return j;
+  }
+  async open() {
+    const j = await this.api("GET", "/api/info");
+    if (!j || !j.omniHub) throw new Error("not the NUC");
+    this.session = j.session;
+    return { kind: "NUC", detail: "Shared database on the NUC: every app and device sees the same players and shots" };
+  }
+  async loadPlayers() { const j = await this.api("GET", "/api/players"); this.session = j.session; return j.players.map(p => ({ ...p, swing: swingId(p.swing), launch: p.launch || {} })); }
+  async savePlayer(p) { await this.api("PUT", `/api/players/${encodeURIComponent(p.id)}`, p); }
+  async deletePlayer(id) { await this.api("DELETE", `/api/players/${encodeURIComponent(id)}`); }
+  async loadShots() { return (await this.api("GET", "/api/shots")).shots.map(s => ({ ...s, swing: swingId(s.swing), excluded: !!s.excluded })); }
+  async saveShot(s) { await this.api("PUT", `/api/shots/${encodeURIComponent(s.id)}`, s); }
+  async deleteShot(id) { await this.api("DELETE", `/api/shots/${encodeURIComponent(id)}`); }
+  async addRaw() { return null; } // the NUC stores every packet itself
+  async linkRaw() {}
+  async listRaw({ limit = 300, shotId = null, keepAlive = true } = {}) {
+    const q = new URLSearchParams({ limit, keepalive: keepAlive ? "1" : "0" }); if (shotId) q.set("shot", shotId);
+    return (await this.api("GET", `/api/raw?${q}`)).raw;
+  }
+  async clearRaw() { await this.api("DELETE", "/api/raw"); }
+  async prune() {}
+  async stats() { const j = await this.api("GET", "/api/info"); return { players: j.players, shots: j.shots, raw: j.raw, bytes: j.bytes }; }
+  async exportFile() {
+    const r = await fetch("/api/export.sqlite", { cache: "no-store" });
+    if (!r.ok) throw new Error("the NUC wouldn't export");
+    return { name: "omni-nuc.sqlite", data: new Uint8Array(await r.arrayBuffer()), ext: "sqlite" };
+  }
+  async importFile(bytes) { const d = await readRangeFile(bytes); return this.merge(d.players, d.shots); } // adds to what's there
+  async merge(players, shots) { return this.api("POST", "/api/import", { players, shots }); }
+  async setSession(s) { this.session = await this.api("PUT", "/api/session", s); return this.session; }
+  async flush() {}
+}
+
+// A Range Lab file (SQLite or JSON) read into { players, shots }, without touching this browser's data
+async function readRangeFile(bytes) {
+  if (bytes[0] === 0x7b) { const d = JSON.parse(new TextDecoder().decode(bytes)); if (!d.players || !d.shots) throw new Error("That file isn't a Range Lab export"); return { players: d.players, shots: d.shots }; }
+  const s = new SqliteStore();
+  try { await s.open({ persist: Persist.memory(), bytes }); } catch { throw new Error("That file isn't a Range Lab database"); }
+  return { players: await s.loadPlayers(), shots: await s.loadShots() };
+}
+// What this browser saved on its own (before Range Lab used the NUC), or null
+async function browserData() {
+  try {
+    const idb = await Persist.idb(), bytes = await idb.load();
+    if (bytes) { const s = new SqliteStore(); await s.open({ persist: Persist.memory(), bytes }); return { players: await s.loadPlayers(), shots: await s.loadShots() }; }
+  } catch {}
+  try { const d = JSON.parse(localStorage.getItem("omniRangeLab:fallback") || "null"); if (d && d.players) return { players: d.players, shots: d.shots || [] }; } catch {}
+  return null;
+}
+
+async function makeStore({ hub = false } = {}) {
+  if (hub) { try { const s = new HubStore(); const info = await s.open(); return { store: s, info }; } catch (e) { console.warn("The NUC's database isn't available", e); } }
   try { const s = new SqliteStore(); const info = await s.open(); return { store: s, info }; }
   catch (e) { console.error("SQLite failed", e); const s = new LocalStore(); const info = await s.open(String(e && e.message || e).slice(0, 80)); return { store: s, info }; }
 }
@@ -1496,6 +1585,9 @@ const curSwing = () => (SWING_LONG[me().swing] ? me().swing : "full");
 const shotsFor = (pid, club) => S.shots.filter(s => s.player === pid && (club === null || s.club === club));
 const viewShots = () => S.shots.filter(s => s.player === S.current && (allClubs || s.club === curClub()) && (allSwings || swingOf(s) === curSwing()));
 const viewLabel = () => `${allClubs ? "All clubs" : clubLong(curClub())} · ${allSwings ? "all swings" : SWING_LONG[curSwing()]}`;
+const hub = () => !!store && store.kind === "NUC"; // opened from the NUC: one shared database, and the NUC records the shots
+let browserCopy = null; // in hub mode, shots this browser saved on its own before, not yet on the NUC
+const launchFor = (p, club) => { const v = p && p.launch ? p.launch[club] : null; return v == null || v === "" || !isFinite(v) ? null : +v; };
 const persistPlayer = p => store.savePlayer(p).catch(e => toast("Couldn't save: " + e.message));
 const persistShot = s => store.saveShot(s).catch(e => toast("Couldn't save the shot: " + e.message));
 
@@ -1514,13 +1606,31 @@ function calc(shot) {
 }
 const fly = s => { const r = OG.simulate(s, { course: FLAT, start: [0, 0, 0], aimYaw: 0, carryOnly: true, dt: 0.002 }); return { carry: r.carry / YD, apex: r.apex / YD, descent: r.landAngle }; };
 const solveCache = new Map(), fullCache = new Map();
-function solve(band, club, yd) { const k = `${band}|${club}|${yd}`; if (!solveCache.has(k)) solveCache.set(k, BANDS.solve(band, club, yd, fly)); return solveCache.get(k); }
-function fullCarry(band, club) { const k = `${band}|${club}`; if (!fullCache.has(k)) { const p = BANDS.profile(band)[club]; fullCache.set(k, fly(BANDS.shotAt(p, p.ball)).carry); } return fullCache.get(k); }
+// launch: the player's own full-swing launch for the club (Player tab), used instead of the band's when set
+function solve(band, club, yd, launch = null) { const k = `${band}|${club}|${yd}|${launch}`; if (!solveCache.has(k)) solveCache.set(k, BANDS.solve(band, club, yd, fly, launch)); return solveCache.get(k); }
+const ownProfile = (band, club, launch) => { const q = BANDS.profile(band)[club]; return q && launch != null ? { ...q, launch } : q; };
+function fullCarry(band, club, launch = null) { const k = `${band}|${club}|${launch}`; if (!fullCache.has(k)) { const q = ownProfile(band, club, launch); fullCache.set(k, fly(BANDS.shotAt(q, q.ball)).carry); } return fullCache.get(k); }
 function practice() {
   const p = me(), club = curClub();
   if (!p.practiceOn || club === DIAG || !(p.practiceYd > 0)) return null;
-  return { yd: p.practiceYd, band: p.band, club, sol: solve(p.band, club, p.practiceYd) };
+  const launch = launchFor(p, club);
+  return { yd: p.practiceYd, band: p.band, club, launch, sol: solve(p.band, club, p.practiceYd, launch) };
 }
+// The rough landing grouping: an oval that about two shots in three land inside (a 2-D normal fit to
+// the landing spots, so it tilts if misses go long-left and short-right, say). pts: [[side, carry]]
+const K68 = Math.sqrt(-2 * Math.log(1 - 0.68));
+function grouping(pts) {
+  if (pts.length < 3) return null;
+  const n = pts.length, mx = mean(pts.map(q => q[0])), my = mean(pts.map(q => q[1]));
+  let sxx = 0, syy = 0, sxy = 0;
+  for (const [x, y] of pts) { sxx += (x - mx) ** 2; syy += (y - my) ** 2; sxy += (x - mx) * (y - my); }
+  sxx /= n - 1; syy /= n - 1; sxy /= n - 1;
+  const half = (sxx + syy) / 2, d = Math.sqrt(Math.max(0, ((sxx - syy) / 2) ** 2 + sxy ** 2)), angle = 0.5 * Math.atan2(2 * sxy, sxx - syy);
+  const a = K68 * Math.sqrt(half + d), b = K68 * Math.sqrt(Math.max(0, half - d)), c = Math.cos(angle), sn = Math.sin(angle);
+  return { n, mx, my, a, b, angle, hx: Math.sqrt((a * c) ** 2 + (b * sn) ** 2), hy: Math.sqrt((a * sn) ** 2 + (b * c) ** 2) };
+}
+const GROUP_RGB = { full: "134,239,172", "2/3": "125,211,252", "1/3": "252,211,77" };
+const ydSize = v => (v < 0.5 ? "<1" : f0(v));
 
 // ------------------------------------------------------------------ formatting
 const f1 = v => v == null || !isFinite(v) ? "–" : (Math.round(v * 10) / 10).toFixed(1);
@@ -1574,7 +1684,11 @@ $("addPlayer").onclick = () => {
   const p = freshPlayer(`Player ${S.players.length + 1}`); S.players.push(p); persistPlayer(p); switchPlayer(p.id); showTab("player");
   setTimeout(() => { const i = $("pName"); if (i) { i.focus(); i.select(); } }, 50);
 };
-function switchPlayer(id) { S.current = id; lsSet(CUR_KEY, id); selId = null; anim = null; tellOmni(); renderAll(); }
+function switchPlayer(id) {
+  S.current = id; lsSet(CUR_KEY, id); selId = null; anim = null;
+  if (hub()) store.setSession({ player: id }).catch(e => toast("Couldn't tell the NUC: " + e.message));
+  tellOmni(); renderAll();
+}
 function switchClub(c) { const p = me(); p.club = c; persistPlayer(p); selId = null; anim = null; tellOmni(); renderAll(); }
 function switchSwing(w) { const p = me(); if (curSwing() === w) return; p.swing = w; persistPlayer(p); selId = null; anim = null; renderAll(); }
 function tellOmni() {
@@ -1676,13 +1790,19 @@ function renderShots() {
   } else h += `<div class="empty">No shots to show yet.</div>`;
   h += `<h3>Data</h3><div class="note" id="dbInfo" style="margin-top:0">${esc(storeInfo.detail)}</div>
     <div class="row"><button id="bCsv">Export shots (CSV)</button><button id="bDbOut">Export database</button><label class="btn" for="dbIn">Import database</label><input type="file" id="dbIn" accept=".sqlite,.db,.zip,.json" hidden></div>
-    ${importBytes ? `<div class="row"><span class="warn">Replace everything with ${esc(importBytes.name)}?</span><button class="danger${armed === "import" ? " armed" : ""}" id="bImport">${armed === "import" ? "Tap again to replace" : "Replace my data"}</button><button id="bImportNo">Cancel</button></div>` : ""}`;
+    ${importBytes ? (hub() ? `<div class="row"><span class="warn">Add everything in ${esc(importBytes.name)} to the NUC? Shots already there are skipped.</span><button class="go" id="bImport">Add it</button><button id="bImportNo">Cancel</button></div>`
+      : `<div class="row"><span class="warn">Replace everything with ${esc(importBytes.name)}?</span><button class="danger${armed === "import" ? " armed" : ""}" id="bImport">${armed === "import" ? "Tap again to replace" : "Replace my data"}</button><button id="bImportNo">Cancel</button></div>`) : ""}
+    ${hub() && browserCopy ? `<div class="row"><span class="warn" style="flex:1">This browser also has ${browserCopy.newShots} shot${browserCopy.newShots === 1 ? "" : "s"}${browserCopy.newPlayers ? ` and ${browserCopy.newPlayers} player${browserCopy.newPlayers === 1 ? "" : "s"}` : ""} saved on its own, from before Range Lab used the NUC.</span><button class="go" id="bCopy">Copy to the NUC</button></div>` : ""}`;
   $("pShots").innerHTML = h;
   $("bAll").onclick = () => { allClubs = !allClubs; selId = null; anim = null; renderAll(); };
   $("bAllW").onclick = () => { allSwings = !allSwings; selId = null; anim = null; renderAll(); };
   $("bCsv").onclick = exportCsv; $("bDbOut").onclick = exportDb;
   $("dbIn").onchange = async e => { const f = e.target.files[0]; if (!f) return; importBytes = { name: f.name, bytes: new Uint8Array(await f.arrayBuffer()) }; renderShots(); };
-  if ($("bImport")) { $("bImport").onclick = () => { if (arm("import", renderShots)) importDb(); }; $("bImportNo").onclick = () => { importBytes = null; renderShots(); }; }
+  if ($("bImport")) { $("bImport").onclick = () => { if (hub() || arm("import", renderShots)) importDb(); }; $("bImportNo").onclick = () => { importBytes = null; renderShots(); }; }
+  if ($("bCopy")) $("bCopy").onclick = async () => {
+    try { const n = await store.merge(browserCopy.players, browserCopy.shots); toast(`Copied ${n.shots} shot${n.shots === 1 ? "" : "s"} and ${n.players} player${n.players === 1 ? "" : "s"} to the NUC`, 4000); await reload(); await findBrowserCopy(); }
+    catch (e) { toast("Couldn't copy: " + e.message, 4000); }
+  };
   const tb = $("pShots").querySelector("tbody");
   if (tb) tb.onclick = e => { const r = e.target.closest("tr[data-s]"); if (!r) return; selId = r.dataset.s; const s = S.shots.find(x => x.id === selId); renderHUD(); renderPanel(); if (s) startAnim(s); };
   store.stats().then(st => { const el = $("dbInfo"); if (el) el.textContent = `${storeInfo.detail}. ${st.players} player${st.players === 1 ? "" : "s"}, ${st.shots} shots, ${st.raw} raw packets, ${(st.bytes / 1024).toFixed(0)} KB.`; }).catch(() => {});
@@ -1782,7 +1902,8 @@ function renderDist() {
       h += `</div><div class="sec"><div class="sec-h"><span class="badge calc">Averages · calculated</span><span class="sec-note">our physics, shot by shot</span></div>`;
       h += `<div class="grid">${AVG_CALC.map(([k, g, d, u, kind]) => avgTile("calc", k, stat(cs.map(g)), d, u, kind)).join("")}</div>`;
       const cr = stat(cs.map(c => c.carry)), app = stat(used.map(s => s.app));
-      if (cr) h += `<div class="note">Carry from ${f1(cr.min)} to ${f1(cr.max)} yd. About two shots in three land within the ± spread of the average.${app ? ` Square's carry averages ${f1(app.mean)} yd over ${app.n} shot${app.n === 1 ? "" : "s"}.` : ""}</div>`;
+      const g = grouping(cs.map(c => [c.side, c.carry]));
+      if (cr) h += `<div class="note">Carry from ${f1(cr.min)} to ${f1(cr.max)} yd. About two shots in three land within the ± spread of the average.${g ? ` Grouping: two shots in three land within about ${ydSize(2 * g.hy)} yd long by ${ydSize(2 * g.hx)} yd wide.` : ""}${app ? ` Square's carry averages ${f1(app.mean)} yd over ${app.n} shot${app.n === 1 ? "" : "s"}.` : ""}</div>`;
       h += `</div>`;
     }
     const isCur = cell.club === curClub() && cell.swing === curSwing();
@@ -1808,20 +1929,23 @@ function renderPractice() {
   if (club === DIAG) {
     h += `<div class="empty">Pick a club at the top. "Any club" has no typical numbers to aim for.</div>`;
   } else {
-    const yd = p.practiceYd || 150, sol = solve(band.id, club, yd);
-    h += `<div class="sec"><div class="sec-h"><span class="badge tgt">What you need</span><span class="sec-note">calculated for a ${esc(band.label)} ${esc(club)}</span></div>`;
+    const yd = p.practiceYd || 150, own = launchFor(p, club), sol = solve(band.id, club, yd, own);
+    h += `<div class="sec"><div class="sec-h"><span class="badge tgt">What you need</span><span class="sec-note">calculated for a ${esc(band.label)} ${esc(club)}${own != null ? `, launching at ${esc(p.name)}'s own ${f1(own)}°` : ""}</span></div>`;
     if (sol && sol.ok) {
       h += `<div class="grid">${tile("need", "Ball speed", f1(sol.shot.speedMph), "mph")}${tile("need", "Launch", f1(sol.shot.vla), "°")}${tile("need", "Spin", f0(sol.shot.spinRpm), "rpm")}${tile("need", "Club speed", "≈" + f1(sol.clubMph), "mph")}${tile("need", "Swing", f0(sol.swing * 100), "% of full")}${tile("need", "Apex / descent", `${f0(sol.apex)} / ${f0(sol.descent)}`, "yd / °", true)}</div>`;
       if (sol.swing > 1.08) h += `<div class="note warn">That's harder than a typical full swing at this level. More club would be easier.</div>`;
       if (sol.swing < 0.75) h += `<div class="note">That's a three-quarter swing or less with this club.</div>`;
     } else if (sol && sol.tooFar) h += `<div class="empty">Even a 125% swing only carries about ${f0(sol.max)} yd with a ${esc(club)} at this level. Take more club.</div>`;
     else if (sol && sol.tooShort) h += `<div class="empty">That's under about ${f0(sol.min)} yd, shorter than a third of a swing with this club. Take less club.</div>`;
-    const best = p.bag.filter(c => CLUBS.includes(c)).map(c => [c, fullCarry(band.id, c)]).sort((a, b) => Math.abs(a[1] - yd) - Math.abs(b[1] - yd))[0];
+    const best = p.bag.filter(c => CLUBS.includes(c)).map(c => [c, fullCarry(band.id, c, launchFor(p, c))]).sort((a, b) => Math.abs(a[1] - yd) - Math.abs(b[1] - yd))[0];
     if (best) h += `<div class="note">At this level a full ${esc(best[0])} carries about ${f0(best[1])} yd, the closest in ${esc(p.name)}'s bag to ${f0(yd)} yd.</div>`;
     h += `</div>`;
-    const done = shotsFor(p.id, club).filter(s => s.target && s.target.yd === yd && s.target.band === band.id && s.target.need);
-    if (done.length) {
-      const nd = done[0].target.need, real = done.map(s => s.ball), cs = done.map(calc).filter(Boolean);
+    const done = shotsFor(p.id, club).filter(s => s.target && s.target.yd === yd && s.target.band === band.id);
+    const t0 = done.length ? done[done.length - 1].target : null;
+    // shots the NUC recorded carry the target but not the numbers needed, which are worked out here
+    const nd = t0 ? t0.need || (solve(t0.band, t0.club || club, t0.yd, t0.launch ?? null) || {}).shot : null;
+    if (done.length && nd) {
+      const real = done.map(s => s.ball), cs = done.map(calc).filter(Boolean);
       h += `<div class="sec"><div class="sec-h"><span class="badge meas">Your shots at this target</span><span class="sec-note">${done.length} shot${done.length === 1 ? "" : "s"}</span></div>
         <table class="cmp"><thead><tr><th></th><th>Avg measured</th><th>Needed</th><th>Diff</th></tr></thead><tbody>
         <tr><td>Ball speed</td><td class="mv">${f1(mean(real.map(b => b.speedMph)))} mph</td><td>${f1(nd.speedMph)} mph</td><td>${signed(mean(real.map(b => b.speedMph)) - nd.speedMph)}</td></tr>
@@ -1832,8 +1956,9 @@ function renderPractice() {
   }
   const prof = BANDS.profile(band.id);
   h += `<h3>Typical full swing · ${esc(band.label)}</h3><div class="tablewrap"><table class="shots"><thead><tr><th>Club</th><th>Ball</th><th>Launch</th><th>Spin</th><th class="gc">≈ Carry</th></tr></thead><tbody>`;
-  for (const c of CLUBS.filter(c => p.bag.includes(c))) { const q = prof[c]; h += `<tr class="${c === club ? "pick" : ""}" data-club="${esc(c)}"><td>${esc(SHORT[c])}${q.est ? "<sup>e</sup>" : ""}</td><td>${f1(q.ball)}</td><td>${f1(q.launch)}</td><td>${f0(q.spin)}</td><td class="cv">${f0(fullCarry(band.id, c))}</td></tr>`; }
-  h += `</tbody></table></div><div class="note">Source: ${esc(band.src)} ${band.tour ? "" : "Clubs in between are laid over the tour profile."} <sup>e</sup> estimated: ${band.tour ? "4 hybrid and the gap, sand and lob wedges aren't in TrackMan's tables." : "worked out from the driver and 6-iron data, so treat as rough."} Needed numbers come from our physics; a slower-than-full swing launches a little higher with less spin.</div>`;
+  let anyOwn = false;
+  for (const c of CLUBS.filter(c => p.bag.includes(c))) { const q = prof[c], own = launchFor(p, c); anyOwn = anyOwn || own != null; h += `<tr class="${c === club ? "pick" : ""}" data-club="${esc(c)}"><td>${esc(SHORT[c])}${q.est ? "<sup>e</sup>" : ""}</td><td>${f1(q.ball)}</td><td>${own != null ? `<b>${f1(own)}</b><sup>you</sup>` : f1(q.launch)}</td><td>${f0(q.spin)}</td><td class="cv">${f0(fullCarry(band.id, c, own))}</td></tr>`; }
+  h += `</tbody></table></div><div class="note">Source: ${esc(band.src)} ${band.tour ? "" : "Clubs in between are laid over the tour profile."} <sup>e</sup> estimated: ${band.tour ? "4 hybrid and the gap, sand and lob wedges aren't in TrackMan's tables." : "worked out from the driver and 6-iron data, so treat as rough."} Needed numbers come from our physics; a slower-than-full swing launches a little higher with less spin.${anyOwn ? ` <sup>you</sup> ${esc(p.name)}'s own launch angle, set on the Player tab.` : ""}</div>`;
   $("pPractice").innerHTML = h;
   $("bandRow").onclick = e => { const b = e.target.closest("[data-band]"); if (!b) return; p.band = b.dataset.band; persistPlayer(p); renderAll(); };
   const setYd = v => { p.practiceYd = Math.max(5, Math.min(400, Math.round(v))); persistPlayer(p); renderAll(); };
@@ -1847,8 +1972,9 @@ function renderPractice() {
 
 // ------------------------------------------------------------------ Raw tab
 const DIR = { in: "←", out: "→", read: "←" };
+function hexBytes(h) { return Uint8Array.from(String(h).split(" ").filter(Boolean), x => parseInt(x, 16)); }
 function rawRow(r) {
-  const d = r.decoded || {}, shot = r.shotId ? S.shots.find(s => s.id === r.shotId) : null;
+  const d = r.decoded || (r.hex && r.direction ? RawTap.decode({ source: r.source || "relay", direction: r.direction, bytes: hexBytes(r.hex) }) : {}), shot = r.shotId ? S.shots.find(s => s.id === r.shotId) : null;
   const n = shot ? shotsFor(shot.player, shot.club).indexOf(shot) + 1 : 0;
   return `<div class="raw ${r.direction}"><div class="rh"><span class="rt">${time(r.ts, true)}.${String(r.ts % 1000).padStart(3, "0")}</span><span class="rd">${r.source === "relay" ? (r.direction === "out" ? "Square app → Omni" : r.direction === "read" ? "Square app read" : "Omni → Square app") : `${DIR[r.direction] || ""} ${r.source === "omni" ? "Omni" : "flighthook"}${r.direction === "read" ? " (read)" : ""}`}</span><span class="rk">${esc(r.kind || "")}</span>${shot ? `<span class="rs">${esc(clubLabel(shot.club))} shot ${n}</span>` : ""}</div>
     <div class="rx">${esc(r.hex || r.text || "")}</div>${d.summary ? `<div class="rm">${esc(d.summary)}</div>` : ""}</div>`;
@@ -1878,6 +2004,16 @@ function renderPlayer() {
   h += `<h3>Plays</h3><div class="row"><button id="hR" class="${p.hand === "R" ? "sel" : ""}">Right-handed</button><button id="hL" class="${p.hand === "L" ? "sel" : ""}">Left-handed</button></div>`;
   h += `<h3>Bag</h3><div class="row" id="bagRow">${CLUBS.map(c => `<button data-b="${esc(c)}" class="${p.bag.includes(c) ? "sel" : ""}" title="${esc(c)}">${clubLabel(c)}</button>`).join("")}</div>`;
   h += `<div class="note">Tap a club to add it to or take it out of ${esc(p.name)}'s bag. "Any club" is always there for diagnostics. The Omni only knows these clubs, so the bag sticks to them.</div>`;
+  const measured = c => { const v = S.shots.filter(s => s.player === p.id && s.club === c && swingOf(s) === "full" && !s.excluded && s.src !== "manual").map(s => s.ball.vla).filter(x => x != null && isFinite(x)); return v.length ? { avg: Math.round(mean(v) * 10) / 10, n: v.length } : null; };
+  const bagClubs = CLUBS.filter(c => p.bag.includes(c)), fillable = bagClubs.filter(c => launchFor(p, c) == null && measured(c));
+  h += `<h3>Launch angle by club</h3><div class="note" style="margin-top:0">${esc(p.name)}'s usual full-swing launch with each club. Practice targets, test shots and the game use it in place of the handicap band's. Empty uses the band's; the grey number is ${esc(p.name)}'s measured average.</div>
+    <div class="tablewrap"><table class="shots launch"><thead><tr><th>Club</th><th>Launch</th><th>Measured</th><th>Band</th></tr></thead><tbody>`;
+  for (const c of bagClubs) {
+    const m = measured(c), own = launchFor(p, c), typ = (BANDS.profile(p.band || "m-10-18")[c] || {}).launch;
+    h += `<tr><td>${esc(SHORT[c])}</td><td><input type="number" class="ln" data-c="${esc(c)}" step="0.1" min="-5" max="60" inputmode="decimal" aria-label="${esc(c)} launch angle" value="${own ?? ""}" placeholder="${m ? m.avg : "–"}"> °</td>
+      <td>${m ? `${f1(m.avg)}° <span class="muted">· ${m.n}</span>${own == null || Math.abs(own - m.avg) > 0.05 ? ` <button class="mini" data-use="${esc(c)}">Use</button>` : ""}` : `<span class="muted">no full swings yet</span>`}</td><td class="muted">${typ != null ? f1(typ) + "°" : "–"}</td></tr>`;
+  }
+  h += `</tbody></table></div>${fillable.length ? `<div class="row"><button id="lnFill">Use the measured average for ${fillable.length === 1 ? esc(SHORT[fillable[0]]) : `${fillable.length} empty clubs`}</button></div>` : ""}`;
   h += `<h3>Players</h3><div class="row"><button id="pAdd">Add a player</button>${S.players.length > 1 ? `<button class="danger${armed === "p:" + p.id ? " armed" : ""}" id="pDel">${armed === "p:" + p.id ? `Tap again: delete ${esc(p.name)} and ${n} shot${n === 1 ? "" : "s"}` : `Delete ${esc(p.name)}`}</button>` : ""}</div>`;
   $("pPlayer").innerHTML = h;
   let nameT = 0;
@@ -1886,6 +2022,10 @@ function renderPlayer() {
   $("hL").onclick = () => { p.hand = "L"; persistPlayer(p); tellOmni(); renderAll(); };
   $("bagRow").onclick = e => { const b = e.target.closest("[data-b]"); if (!b) return; const c = b.dataset.b; p.bag = p.bag.includes(c) ? p.bag.filter(x => x !== c) : CLUBS.filter(x => x === c || p.bag.includes(x)); persistPlayer(p); tellOmni(); renderAll(); };
   $("pAdd").onclick = () => $("addPlayer").click();
+  const setLaunch = (c, v) => { p.launch = { ...(p.launch || {}) }; if (v == null) delete p.launch[c]; else p.launch[c] = Math.round(Math.max(-5, Math.min(60, v)) * 10) / 10; persistPlayer(p); };
+  $("pPlayer").querySelectorAll("input.ln").forEach(i => (i.onchange = e => { const v = e.target.value.trim(); setLaunch(e.target.dataset.c, v === "" || !isFinite(+v) ? null : +v); renderPlayer(); }));
+  $("pPlayer").querySelectorAll("[data-use]").forEach(b => (b.onclick = () => { const m = measured(b.dataset.use); if (m) { setLaunch(b.dataset.use, m.avg); renderPlayer(); } }));
+  if ($("lnFill")) $("lnFill").onclick = () => { p.launch = { ...(p.launch || {}) }; for (const c of fillable) p.launch[c] = measured(c).avg; persistPlayer(p); renderPlayer(); toast("Launch angles filled in from your averages"); };
   const del = $("pDel");
   if (del) del.onclick = () => {
     if (!arm("p:" + p.id, renderPlayer)) return;
@@ -1915,7 +2055,7 @@ function record(ball, cd, src) {
   const pkt = raws.find(r => r.kind === "shot");
   if (pkt) { s.ball.backSpin = pkt.decoded.fields.backSpinRpm; s.ball.sideSpin = pkt.decoded.fields.sideSpinRpm; }
   const pr = practice();
-  if (pr && pr.sol && pr.sol.ok) s.target = { yd: pr.yd, band: pr.band, club: pr.club, need: { speedMph: pr.sol.shot.speedMph, vla: pr.sol.shot.vla, spinRpm: pr.sol.shot.spinRpm, clubMph: pr.sol.clubMph } };
+  if (pr && pr.sol && pr.sol.ok) s.target = { yd: pr.yd, band: pr.band, club: pr.club, ...(pr.launch != null ? { launch: pr.launch } : {}), need: { speedMph: pr.sol.shot.speedMph, vla: pr.sol.shot.vla, spinRpm: pr.sol.shot.spinRpm, clubMph: pr.sol.clubMph } };
   S.shots.push(s);
   persistShot(s).then(() => {
     if (!raws.length) return;
@@ -1931,7 +2071,7 @@ function record(ball, cd, src) {
 
 // ------------------------------------------------------------------ test shot sheet
 function testShotSheet() {
-  const club = omniClubFor(curClub()), p = BANDS.profile(me().band || "m-10-18")[club];
+  const club = omniClubFor(curClub()), own = launchFor(me(), curClub()), p = ownProfile(me().band || "m-10-18", club, own);
   const last = selected(), v = last ? last.ball : BANDS.shotAt(p, p.ball);
   openSheet(`<h2>Test shot</h2><div class="note" style="margin-top:0">Type in launch numbers to fly a ball without the Omni. It's recorded against ${esc(me().name)}, ${esc(clubLong(curClub()))} and a ${SWING_LONG[curSwing()].toLowerCase()}, and marked as typed in, so it never passes for real data or counts towards your distances.</div>
     <div class="fields">
@@ -1941,6 +2081,7 @@ function testShotSheet() {
       <label class="f">Spin (rpm)<input type="number" id="mSpin" step="10" value="${Math.round(v.spinRpm)}"></label>
       <label class="f">Spin axis (° +R)<input type="number" id="mAx" step="0.1" value="${v.axisDeg}"></label>
     </div>
+    ${own != null ? `<div class="note">"Typical" uses ${esc(me().name)}'s own launch of ${f1(own)}° for this club.</div>` : ""}
     <div class="row"><button id="mTyp">Typical ${esc(SHORT[club] || club)}</button>${practice() && practice().sol.ok ? `<button id="mNeed">Practice target</button>` : ""}<span style="flex:1"></span><button id="mCancel">Cancel</button><button class="go" id="mHit">Hit it</button></div>`);
   const fill = s => { $("mSp").value = s.speedMph; $("mVla").value = s.vla; $("mHla").value = s.hla || 0; $("mSpin").value = Math.round(s.spinRpm); $("mAx").value = s.axisDeg || 0; };
   $("mTyp").onclick = () => fill(BANDS.shotAt(p, p.ball));
@@ -1973,10 +2114,55 @@ const onShot = ({ shot, club }) => record(shot, club, conn && conn.kind === "frp
 // ------------------------------------------------------------------ the Omni relay: listen only
 // The relay copies every packet between the real Omni and the Square app. Range Lab builds shots
 // from the Omni's own packets and follows the club the Square app sets; it never sends anything.
-const servedByRelay = location.protocol === "http:" && location.pathname.startsWith("/range");
+const servedByRelay = location.pathname.startsWith("/range"); // opened from the NUC (http, or https on its own domain)
 let followSquare = lsGet("omniRangeLab:follow") !== "0", squareClub = null, relayShot = null, relayTimer = 0, lastShot = { hex: "", t: 0 }, relayWanted = null;
 const CODE_NAME = { DR: "Driver", W3: "3 wood", H4: "4 hybrid", I5: "5 iron", I6: "6 iron", I7: "7 iron", I8: "8 iron", I9: "9 iron", PW: "PW", GW: "Gap wedge", SW: "Sand wedge", LW: "Lob wedge", PT: "Putter" };
 function relayUrl(v) { return /^wss?:/.test(v) ? v : `ws://${/:\d+$/.test(v) ? v : v + ":8080"}/ws`; }
+const selfRelay = () => `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/ws`;
+let hubSeen = false, reloadT = 0;
+const reloadSoon = () => { clearTimeout(reloadT); reloadT = setTimeout(() => reload().then(findBrowserCopy).catch(() => {}), 300); };
+function hubEvent(ev) {
+  if (ev.by && ev.by === store.client && ev.type !== "reload") return; // our own change coming back
+  if (ev.type === "shot") arrived(ev.shot);
+  else if (ev.type === "shot-deleted") { S.shots = S.shots.filter(s => s.id !== ev.id); cache.delete(ev.id); if (selId === ev.id) { selId = null; anim = null; } renderAll(); }
+  else if (ev.type === "player") {
+    const was = S.players.find(p => p.id === ev.player.id), before = was && was.id === S.current ? curClub() + "|" + curSwing() : null;
+    if (was) Object.assign(was, ev.player); else S.players.push(ev.player);
+    if (before && before !== curClub() + "|" + curSwing()) { selId = null; anim = null; toast(`${me().name}: ${clubLong(curClub())}, ${SWING_LONG[curSwing()].toLowerCase()}`); }
+    if (tab !== "player" || !was || was.id !== S.current) renderAll(); else renderHUD();
+  } else if (ev.type === "player-deleted") {
+    S.players = S.players.filter(p => p.id !== ev.id); S.shots = S.shots.filter(s => s.player !== ev.id);
+    if (S.current === ev.id && S.players.length) { S.current = S.players[0].id; selId = null; anim = null; }
+    renderAll();
+  } else if (ev.type === "session") {
+    const s = ev.session || {};
+    followSquare = s.followSquare !== false;
+    if (s.player && s.player !== S.current && S.players.some(p => p.id === s.player)) { S.current = s.player; selId = null; anim = null; toast(`${me().name} is up`); }
+    renderAll();
+  } else if (ev.type === "reload") reloadSoon();
+}
+// a shot the NUC recorded (or another device added): shown just like one hit here
+function arrived(shot) {
+  const s = { ...shot, swing: swingOf(shot), excluded: !!shot.excluded }, i = S.shots.findIndex(x => x.id === s.id);
+  cache.delete(s.id);
+  if (i >= 0) { S.shots[i] = s; renderAll(); return; }
+  S.shots.push(s);
+  if (s.player !== S.current) { renderAll(); return; }
+  selId = s.id;
+  if (tab === "player") showTab("shot");
+  renderAll(); startAnim(s);
+  const c = calc(s);
+  toast(`${me().name} · ${clubLabel(s.club)}${s.swing !== "full" ? " " + SWING_SHORT[s.swing] : ""} · ${f1(s.ball.speedMph)} mph${c ? ` · ≈${f1(c.carry)} yd` : ""}`);
+}
+async function findBrowserCopy() {
+  if (!hub()) return;
+  const d = await browserData();
+  if (!d) { browserCopy = null; return; }
+  const have = new Set(S.shots.map(s => s.id)), havePlayers = new Set(S.players.map(p => p.id));
+  const shots = d.shots.filter(s => !have.has(s.id)), players = d.players.filter(p => !havePlayers.has(p.id));
+  browserCopy = shots.length || players.length ? { players: d.players, shots: d.shots, newShots: shots.length, newPlayers: players.length } : null;
+  if (tab === "shots") renderShots();
+}
 async function connectRelay(addr) {
   if (conn) { try { await conn.disconnect(); } catch {} conn = null; }
   relayWanted = addr;
@@ -1989,6 +2175,8 @@ async function connectRelay(addr) {
   ws.onmessage = m => {
     let ev; try { ev = JSON.parse(m.data); } catch { return; }
     if (ev.type === "hello" || ev.type === "status") relayStatus(ev.state);
+    if (ev.type === "hello" && hub()) { if (hubSeen) reloadSoon(); hubSeen = true; } // back after a drop: catch up
+    if (hub() && ["shot", "shot-deleted", "player", "player-deleted", "session", "reload"].includes(ev.type)) hubEvent(ev);
     else if (ev.type === "packet") RawTap.emit({ source: "relay", direction: ev.dir === "omni>app" ? "in" : ev.dir === "app>omni" ? "out" : "read", bytes: Uint8Array.from(ev.hex.split(" ").filter(Boolean), h => parseInt(h, 16)), uuid: ev.uuid, ts: ev.t });
     else if (ev.type === "note" && ev.level !== "info") toast(`Relay: ${ev.msg}`, 4000);
   };
@@ -2007,6 +2195,10 @@ function relayStatus(st) {
 RawTap.on(e => {
   if (e.source !== "relay") return;
   const d = RawTap.decode(e);
+  if (hub()) { // the NUC records the shots and follows the Square app's club itself
+    if (e.direction === "out" && d.kind === "set-club") { squareClub = squareClubName(d.fields.args || []); renderLive(); }
+    return;
+  }
   if (e.direction === "in" && d.kind === "shot") {
     const hex = RawTap.hex(e.bytes);
     if (hex === lastShot.hex && e.ts - lastShot.t < 1500) return; // the Omni sends each notification twice
@@ -2024,9 +2216,9 @@ function finishRelayShot(cf) {
   const cd = cf ? { Speed: cf.clubSpeedMps != null ? cf.clubSpeedMps * 2.236936 : null, Path: cf.pathDeg, FaceToTarget: cf.faceDeg, AngleOfAttack: cf.attackDeg, Loft: cf.dynamicLoftDeg, HorizontalFaceImpact: cf.impactHmm, VerticalFaceImpact: cf.impactVmm, Smash: cf.smash } : null;
   record(ball, cd, "relay");
 }
+function squareClubName(args) { const code = Object.keys(OG.OMNI_CLUBS).find(k => OG.OMNI_CLUBS[k][0] === args[0] && OG.OMNI_CLUBS[k][1] === args[1]); return CODE_NAME[code] || null; }
 function followSquareClub(args) {
-  const code = Object.keys(OG.OMNI_CLUBS).find(k => OG.OMNI_CLUBS[k][0] === args[0] && OG.OMNI_CLUBS[k][1] === args[1]);
-  squareClub = CODE_NAME[code] || null;
+  squareClub = squareClubName(args);
   renderLive();
   if (!followSquare || !squareClub) return;
   if (squareClub === "Putter") { toast("The Square app switched to putting"); return; }
@@ -2042,7 +2234,7 @@ $("conn").onclick = () => {
     <div class="note" style="margin-top:4px">${bt ? "Turn the Omni on and close the Square app first, as only one app can hold the Bluetooth link." : "This browser has no Bluetooth for web pages. Safari on iPad and iPhone doesn't, so use Chrome or Edge on a computer or Android, or flighthook below."}</div>
     <h3>Omni relay (the NUC)</h3><div class="row"><input type="text" id="cRelay" placeholder="omni-relay.local" value="${esc(lsGet("omniRangeLab:relay") || (servedByRelay ? location.host : ""))}" style="flex:1;width:auto"><button id="cRel">Listen</button></div>
     <div class="row"><button id="cFollow" class="${followSquare ? "sel" : ""}">Follow the Square app's club</button></div>
-    <div class="note" style="margin-top:4px">The relay sits between the Omni and the Square app, so both run at once. Range Lab only listens: it records the Omni's own packets and never sends it anything. ${location.protocol === "https:" ? "From this secure page browsers block the link, so open Range Lab from the relay instead: http://omni-relay.local:8080/range/" : ""}</div>
+    <div class="note" style="margin-top:4px">The relay sits between the Omni and the Square app, so both run at once. Range Lab only listens: it records the Omni's own packets and never sends it anything.${hub() ? " Opened from the NUC, the NUC itself records every shot, against whoever is picked here, so every app sees the same shots." : ""} ${location.protocol === "https:" ? "From this secure page browsers block the link, so open Range Lab from the relay instead: http://omni-relay.local:8080/range/" : ""}</div>
     <h3>flighthook</h3><div class="row"><input type="text" id="cAddr" placeholder="192.168.1.20" value="${esc(saved)}" style="flex:1;width:auto"><button id="cFrp">Connect</button></div>
     <div class="note" style="margin-top:4px">${location.protocol === "https:" ? "Browsers block this kind of link from a secure (https) page unless the address starts with wss://." : "Enter the computer's address, or a full ws:// address."}</div>
     <div class="row" style="justify-content:flex-end"><button id="cClose">Close</button></div>`);
@@ -2066,7 +2258,10 @@ $("conn").onclick = () => {
     }
   };
   $("cRel").onclick = () => { const v = $("cRelay").value.trim(); if (!v) return; lsSet("omniRangeLab:relay", v); closeSheet(); connectRelay(v); };
-  $("cFollow").onclick = () => { followSquare = !followSquare; lsSet("omniRangeLab:follow", followSquare ? "1" : "0"); $("cFollow").classList.toggle("sel", followSquare); };
+  $("cFollow").onclick = () => {
+    followSquare = !followSquare; lsSet("omniRangeLab:follow", followSquare ? "1" : "0"); $("cFollow").classList.toggle("sel", followSquare);
+    if (hub()) store.setSession({ followSquare }).catch(e => toast("Couldn't tell the NUC: " + e.message));
+  };
   $("cFrp").onclick = async () => {
     const raw = $("cAddr").value.trim(); if (!raw) return;
     lsSet("omniRangeLab:frp", raw);
@@ -2105,8 +2300,8 @@ async function importDb() {
   try {
     let bytes = importBytes.bytes;
     if (bytes[0] === 0x50 && bytes[1] === 0x4b) bytes = await unzipFirst(bytes, /\.(sqlite|db|json)$/i);
-    await store.importFile(bytes, importBytes.name);
-    importBytes = null; await reload(); toast("Database imported");
+    const n = await store.importFile(bytes, importBytes.name);
+    importBytes = null; await reload(); toast(n && n.shots != null ? `Added ${n.shots} shot${n.shots === 1 ? "" : "s"} and ${n.players} player${n.players === 1 ? "" : "s"} to the NUC` : "Database imported");
   } catch (e) { toast(e.message || "Couldn't import that file", 4000); }
 }
 // minimal ZIP (stored, no compression) for files Claude's viewer won't save directly
@@ -2183,11 +2378,16 @@ function draw() {
   ctx.strokeStyle = "rgba(255,255,255,.35)"; ctx.setLineDash([6, 8]); ctx.beginPath(); ctx.moveTo(cx, teeY); ctx.lineTo(cx, Y(L)); ctx.stroke(); ctx.setLineDash([]);
   ctx.fillStyle = "#1f3b19"; ctx.fillRect(cx - 22, teeY - 6, 44, 18); ctx.fillStyle = "#e5e7eb"; ctx.beginPath(); ctx.arc(cx, teeY + 3, 3, 0, Math.PI * 2); ctx.fill();
   { const t = `${pr ? "Target" : "Green"} ${f0(tgtYd)} yd`; ctx.font = "700 12px -apple-system, system-ui, sans-serif"; const w = ctx.measureText(t).width + 10; label(t, cx - (Math.max(7, 9 + tgtYd / 30) + 4) * s - 8 - w, Y(tgtYd), pr ? "tgt" : "dim"); }
-  if (cs.length >= 3) {
-    const ms = mean(cs.map(([, c]) => c.side)), mc = mean(cs.map(([, c]) => c.carry)), ss = sd(cs.map(([, c]) => c.side)), sc = sd(cs.map(([, c]) => c.carry));
-    ctx.fillStyle = "rgba(134,239,172,.12)"; ctx.strokeStyle = "rgba(134,239,172,.55)"; ctx.lineWidth = 1.5;
-    ctx.beginPath(); ctx.ellipse(X(ms), Y(mc), Math.max(3, ss * s), Math.max(3, sc * s), 0, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
-    ctx.beginPath(); ctx.moveTo(X(ms) - 7, Y(mc)); ctx.lineTo(X(ms) + 7, Y(mc)); ctx.moveTo(X(ms), Y(mc) - 7); ctx.lineTo(X(ms), Y(mc) + 7); ctx.stroke();
+  // the grouping: real shots only (not typed in, not left out), one oval per swing length shown
+  const groups = (allSwings ? SWINGS.map(([w]) => w) : [curSwing()]).map(w => [w, grouping(cs.filter(([sh]) => !sh.excluded && sh.src !== "manual" && swingOf(sh) === w).map(([, c]) => [c.side, c.carry]))]).filter(([, g]) => g);
+  for (const [w, g] of groups) {
+    const rgb = GROUP_RGB[w];
+    ctx.save(); ctx.translate(X(g.mx), Y(g.my)); ctx.rotate(-g.angle); // canvas y runs down the range, so the tilt flips
+    ctx.fillStyle = `rgba(${rgb},.16)`; ctx.strokeStyle = `rgba(${rgb},.9)`; ctx.lineWidth = 2; ctx.setLineDash([7, 5]);
+    ctx.beginPath(); ctx.ellipse(0, 0, Math.max(5, g.a * s), Math.max(4, g.b * s), 0, 0, Math.PI * 2); ctx.fill(); ctx.stroke(); ctx.setLineDash([]);
+    ctx.restore();
+    ctx.strokeStyle = `rgba(${rgb},.9)`; ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.moveTo(X(g.mx) - 6, Y(g.my)); ctx.lineTo(X(g.mx) + 6, Y(g.my)); ctx.moveTo(X(g.mx), Y(g.my) - 6); ctx.lineTo(X(g.mx), Y(g.my) + 6); ctx.stroke();
   }
   for (const [sh, c] of cs) {
     if (pick && sh.id === pick.id) continue;
@@ -2210,8 +2410,14 @@ function draw() {
     if (now >= pc.duration) label(`≈ ${f1(pc.total)} total`, X(pc.sideTotal) + 10, Y(pc.total) - 2, "dim");
     sideView(pc, now);
   }
+  for (const [w, g] of groups) { // labelled after the flight so the line doesn't cover them
+    const t = `${allSwings ? SWING_SHORT[w] + " · " : ""}2 in 3 land here: ${ydSize(2 * g.hy)} × ${ydSize(2 * g.hx)} yd`;
+    ctx.font = "700 12px -apple-system, system-ui, sans-serif";
+    const lw = ctx.measureText(t).width + 10; // centred just below the oval, clear of the shot's own label
+    label(t, Math.max(r.x + 6, Math.min(X(g.mx) - lw / 2, r.x + r.w - 6 - lw)), Math.min(teeY - 22, Y(g.my - g.hy) + 14), "dim");
+  }
   ctx.font = "600 11px -apple-system, system-ui, sans-serif"; ctx.textAlign = "left"; ctx.textBaseline = "alphabetic"; ctx.fillStyle = "rgba(255,255,255,.6)";
-  ctx.fillText(r.w > 560 ? "Flight and landing spots are calculated from the measured launch data" : "Flight and landing: calculated", r.x + 10, r.y + r.h - 8);
+  ctx.fillText(r.w > 560 ? `Flight and landing spots are calculated from the measured launch data${groups.length ? ". Dashed oval: about two shots in three land inside it" : ""}` : "Flight and landing: calculated", r.x + 10, r.y + r.h - 8);
   if (!cs.length) { ctx.fillStyle = "rgba(255,255,255,.8)"; ctx.font = "600 14px -apple-system, system-ui, sans-serif"; ctx.textAlign = "center"; ctx.fillText(`${me().name} · ${viewLabel()}: no shots yet`, cx, Y(L * 0.55)); }
 }
 function label(t, x, y, kind) {
@@ -2253,12 +2459,14 @@ async function migrateV1() {
 async function reload() {
   S.players = await store.loadPlayers(); S.shots = await store.loadShots(); cache.clear();
   if (!S.players.length) { const p = freshPlayer("Player 1"); S.players.push(p); await store.savePlayer(p); }
-  const cur = lsGet(CUR_KEY); S.current = S.players.some(p => p.id === cur) ? cur : S.players[0].id;
+  const cur = hub() && store.session ? store.session.player : lsGet(CUR_KEY);
+  S.current = S.players.some(p => p.id === cur) ? cur : S.players[0].id;
+  if (hub() && store.session) followSquare = store.session.followSquare !== false;
   selId = null; renderAll();
 }
 (async () => {
   try {
-    ({ store, info: storeInfo } = await makeStore());
+    ({ store, info: storeInfo } = await makeStore({ hub: servedByRelay }));
     store.onError = () => toast("Couldn't save to the database");
     const moved = await migrateV1();
     await reload();
@@ -2267,12 +2475,13 @@ async function reload() {
     resize();
     if (moved) toast(`Moved ${moved} shot${moved === 1 ? "" : "s"} from the first Range Lab into the database`, 4000);
     if (storeInfo.kind !== "SQLite") toast(storeInfo.detail, 5000);
-    if (servedByRelay) fetch("/status").then(r => r.json()).then(j => { if (j.omniRelay) connectRelay(location.host); }).catch(() => {});
+    if (servedByRelay) fetch("/status").then(r => r.json()).then(j => { if (j.omniRelay) connectRelay(selfRelay()); }).catch(() => {});
+    if (hub()) findBrowserCopy().catch(() => {});
   } catch (e) { console.error(e); $("loading").textContent = "Couldn't start: " + e.message; }
 })();
 addEventListener("pagehide", () => { store && store.flush && store.flush(); });
 document.addEventListener("visibilitychange", () => { if (document.hidden && store && store.flush) store.flush(); });
-window.rangeLab = { S, get store() { return store; }, get info() { return storeInfo; }, record, calc, solve, BANDS, RawTap, live, distData };
+window.rangeLab = { S, get store() { return store; }, get info() { return storeInfo; }, record, calc, solve, BANDS, RawTap, live, distData, grouping, get browserCopy() { return browserCopy; } };
 
 </script>
 </body>
