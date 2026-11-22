@@ -109,6 +109,37 @@
   .sheet .fields input { width: 100%; }
   #toast { position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%); background: rgba(0,0,0,.82); border: 1px solid var(--line); padding: 10px 14px; border-radius: 12px; font-size: 14px; font-weight: 600; opacity: 0; transition: opacity .25s; pointer-events: none; z-index: 20; max-width: 80vw; text-align: center; }
   #toast.show { opacity: 1; }
+  /* swing length: full, two-thirds, one-third */
+  .seg { display: inline-flex; flex: none; }
+  .seg button { border-radius: 0; margin-left: -1px; min-width: 38px; justify-content: center; padding: 6px 8px; }
+  .seg button:first-child { border-radius: 10px 0 0 10px; margin-left: 0; }
+  .seg button:last-child { border-radius: 0 10px 10px 0; }
+  .seg button.sel { position: relative; }
+  select { font: inherit; font-size: 15px; color: #fff; background: rgba(255,255,255,.08); border: 1px solid var(--line); border-radius: 8px; padding: 5px 8px; min-height: 34px; max-width: 100%; }
+  select option { color: #000; }
+  .badge.plain { color: rgba(255,255,255,.85); border: 1px solid rgba(255,255,255,.35); }
+  button.warnb.sel { background: #713f12; border-color: var(--warn); }
+  tr.out td { opacity: .42; text-decoration: line-through; }
+  .tile .spr { font-size: 11px; opacity: .62; white-space: nowrap; font-variant-numeric: tabular-nums; }
+  /* distances */
+  table.dist td { padding: 4px 6px; vertical-align: top; }
+  table.dist td.dc { cursor: pointer; border-radius: 6px; }
+  table.dist td.dc b { font-size: 15px; font-style: italic; font-weight: 600; color: rgba(255,255,255,.88); }
+  table.dist td.dc small { display: block; font-size: 10.5px; opacity: .6; }
+  table.dist td.dc.sel { background: rgba(134,239,172,.16); box-shadow: inset 0 0 0 1px rgba(134,239,172,.55); }
+  table.dist td.none { opacity: .35; }
+  table.dist td.gap { opacity: .65; font-size: 11.5px; }
+  .ladder { display: flex; flex-direction: column; gap: 1px; }
+  .lad { display: flex; align-items: stretch; gap: 6px; height: 22px; }
+  .lad .ll { width: 30px; font-size: 11.5px; opacity: .8; flex: none; align-self: center; }
+  .lad .lt { position: relative; flex: 1; border-top: 1px solid rgba(255,255,255,.07); }
+  .lad.ticks { height: 14px; } .lad.ticks .lt { border: 0; }
+  .lad.ticks .lt span { position: absolute; top: 0; transform: translateX(-50%); font-size: 10px; opacity: .55; }
+  .lad .spread { position: absolute; height: 2px; border-radius: 1px; opacity: .45; }
+  .lad .dot, .legend .dot { position: absolute; width: 8px; height: 8px; margin-left: -4px; border-radius: 50%; border: 1px solid rgba(0,0,0,.6); box-sizing: border-box; }
+  .legend .dot { position: static; display: inline-block; margin: 0 4px 0 0; vertical-align: -1px; }
+  .s0 { background: #86efac; } .s1 { background: #7dd3fc; } .s2 { background: #fcd34d; }
+  .legend { display: flex; gap: 12px; flex-wrap: wrap; font-size: 11.5px; opacity: .85; margin-top: 4px; align-items: center; }
   #loading { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; background: #3f6d2f; font-weight: 600; z-index: 30; }
 </style>
 </head>
@@ -117,14 +148,15 @@
 
 <div id="hud">
   <div class="bar"><span id="title">Range Lab</span><div class="chips" id="players"></div><button id="addPlayer" title="Add a player">+ Player</button><button id="conn">Connect</button></div>
-  <div class="bar"><span class="lbl">Club</span><div class="chips" id="clubs"></div></div>
+  <div class="bar"><span class="lbl">Club</span><div class="chips" id="clubs"></div><div class="seg" id="swings" role="group" aria-label="Swing length"></div></div>
   <div class="bar" id="live"></div>
 </div>
 
 <div id="panel">
-  <div class="tabs"><button id="tShot" class="sel">Shot</button><button id="tShots">Shots</button><button id="tPractice">Practice</button><button id="tRaw">Raw</button><button id="tPlayer">Player</button></div>
+  <div class="tabs"><button id="tShot" class="sel">Shot</button><button id="tShots">Shots</button><button id="tDist">Distances</button><button id="tPractice">Practice</button><button id="tRaw">Raw</button><button id="tPlayer">Player</button></div>
   <div class="pane show" id="pShot"></div>
   <div class="pane" id="pShots"></div>
+  <div class="pane" id="pDist"></div>
   <div class="pane" id="pPractice"></div>
   <div class="pane" id="pRaw"></div>
   <div class="pane" id="pPlayer"></div>
@@ -1223,8 +1255,8 @@ const BANDS = (() => {
 //   importFile(bytes, name)                                  replace everything with a file's contents
 //
 // Shapes passed across the interface:
-//   player = { id, name, hand: "R"|"L", club, band, practiceYd, practiceOn, bag: [club] }
-//   shot   = { id, player, club, src: "omni"|"frp"|"manual", ts,
+//   player = { id, name, hand: "R"|"L", club, swing, band, practiceYd, practiceOn, bag: [club] }
+//   shot   = { id, player, club, swing: "full"|"2/3"|"1/3", excluded: bool, src: "omni"|"relay"|"frp"|"manual", ts,
 //              ball: { speedMph, vla, hla, spinRpm, axisDeg, backSpin, sideSpin },   // measured
 //              cd: { Speed, Path, FaceToTarget, AngleOfAttack, Loft, HorizontalFaceImpact,
 //                    VerticalFaceImpact, Smash } | null,                            // measured
@@ -1265,12 +1297,19 @@ const MIGRATIONS = [
      shot_id TEXT REFERENCES shots(id) ON DELETE SET NULL);
    CREATE INDEX raw_by_shot ON raw_events (shot_id);
    CREATE INDEX raw_by_ts ON raw_events (ts);`,
+  // 2: swing length on each shot (shots from before this were full swings), and leaving a shot
+  // out of averages (a mishit) without deleting it
+  `ALTER TABLE shots ADD COLUMN swing TEXT NOT NULL DEFAULT 'full';
+   ALTER TABLE shots ADD COLUMN excluded INTEGER NOT NULL DEFAULT 0;
+   ALTER TABLE players ADD COLUMN swing TEXT NOT NULL DEFAULT 'full';`,
 ];
+const SWING_IDS = ["full", "2/3", "1/3"];
+const swingId = v => (SWING_IDS.includes(v) ? v : "full");
 
 const num = v => (v == null || v === "" || !isFinite(+v) ? null : +v);
 
 function shotToRow(s) {
-  const r = { id: s.id, player_id: s.player, club: s.club, source: s.src, ts: s.ts, app_carry_yd: num(s.app),
+  const r = { id: s.id, player_id: s.player, club: s.club, swing: swingId(s.swing), excluded: s.excluded ? 1 : 0, source: s.src, ts: s.ts, app_carry_yd: num(s.app),
     target_yd: s.target ? num(s.target.yd) : null, target_band: s.target ? s.target.band : null,
     target_json: s.target ? JSON.stringify(s.target) : null };
   for (const [k, c] of BALL_COLS) r[c] = num(s.ball && s.ball[k]);
@@ -1282,7 +1321,7 @@ function rowToShot(r) {
   let cd = null;
   if (CLUB_COLS.some(([, c]) => r[c] != null)) { cd = {}; for (const [k, c] of CLUB_COLS) cd[k] = r[c] == null ? null : r[c]; }
   let target = null; try { target = r.target_json ? JSON.parse(r.target_json) : null; } catch {}
-  return { id: r.id, player: r.player_id, club: r.club, src: r.source, ts: r.ts, ball, cd, app: r.app_carry_yd, target };
+  return { id: r.id, player: r.player_id, club: r.club, swing: swingId(r.swing), excluded: !!r.excluded, src: r.source, ts: r.ts, ball, cd, app: r.app_carry_yd, target };
 }
 function rowToEvent(r) {
   let decoded = null; try { decoded = r.decoded ? JSON.parse(r.decoded) : null; } catch {}
@@ -1334,16 +1373,16 @@ class SqliteStore {
   async loadPlayers() {
     const bags = {};
     for (const r of this.all("SELECT player_id, club FROM bag_clubs")) (bags[r.player_id] = bags[r.player_id] || []).push(r.club);
-    return this.all("SELECT * FROM players ORDER BY sort, created_at").map(r => ({ id: r.id, name: r.name, hand: r.hand, club: r.club, band: r.band, practiceYd: r.practice_yd, practiceOn: !!r.practice_on, bag: bags[r.id] || [] }));
+    return this.all("SELECT * FROM players ORDER BY sort, created_at").map(r => ({ id: r.id, name: r.name, hand: r.hand, club: r.club, swing: swingId(r.swing), band: r.band, practiceYd: r.practice_yd, practiceOn: !!r.practice_on, bag: bags[r.id] || [] }));
   }
   async savePlayer(p) {
     const sort = this.get("SELECT sort FROM players WHERE id = ?", [p.id]);
     const n = sort ? sort.sort : (this.get("SELECT COALESCE(MAX(sort), -1) + 1 n FROM players").n);
     this.db.exec("BEGIN");
     try {
-      this.db.run(`INSERT INTO players (id, name, hand, club, band, practice_yd, practice_on, sort, created_at) VALUES (?,?,?,?,?,?,?,?,?)
-        ON CONFLICT(id) DO UPDATE SET name=excluded.name, hand=excluded.hand, club=excluded.club, band=excluded.band, practice_yd=excluded.practice_yd, practice_on=excluded.practice_on`,
-        [p.id, p.name, p.hand, p.club, p.band || null, num(p.practiceYd), p.practiceOn ? 1 : 0, n, Date.now()]);
+      this.db.run(`INSERT INTO players (id, name, hand, club, swing, band, practice_yd, practice_on, sort, created_at) VALUES (?,?,?,?,?,?,?,?,?,?)
+        ON CONFLICT(id) DO UPDATE SET name=excluded.name, hand=excluded.hand, club=excluded.club, swing=excluded.swing, band=excluded.band, practice_yd=excluded.practice_yd, practice_on=excluded.practice_on`,
+        [p.id, p.name, p.hand, p.club, swingId(p.swing), p.band || null, num(p.practiceYd), p.practiceOn ? 1 : 0, n, Date.now()]);
       this.db.run("DELETE FROM bag_clubs WHERE player_id = ?", [p.id]);
       for (const c of p.bag) this.db.run("INSERT INTO bag_clubs (player_id, club) VALUES (?, ?)", [p.id, c]);
       this.db.exec("COMMIT");
@@ -1400,10 +1439,10 @@ class LocalStore {
     return { kind: "Browser storage", detail: `SQLite couldn't start here${reason ? ` (${reason})` : ""}, so data is kept as JSON in this browser` };
   }
   save() { clearTimeout(this.t); this.t = setTimeout(() => { try { localStorage.setItem(this.key, JSON.stringify(this.d)); } catch (e) { if (this.onError) this.onError(e); } }, 400); }
-  async loadPlayers() { return structuredClone(this.d.players); }
+  async loadPlayers() { return structuredClone(this.d.players).map(p => ({ ...p, swing: swingId(p.swing) })); }
   async savePlayer(p) { const i = this.d.players.findIndex(x => x.id === p.id); const c = structuredClone(p); i < 0 ? this.d.players.push(c) : (this.d.players[i] = c); this.save(); }
   async deletePlayer(id) { this.d.players = this.d.players.filter(p => p.id !== id); const gone = new Set(this.d.shots.filter(s => s.player === id).map(s => s.id)); this.d.shots = this.d.shots.filter(s => !gone.has(s.id)); this.d.raw.forEach(e => { if (gone.has(e.shotId)) e.shotId = null; }); this.save(); }
-  async loadShots() { return structuredClone(this.d.shots); }
+  async loadShots() { return structuredClone(this.d.shots).map(s => ({ ...s, swing: swingId(s.swing), excluded: !!s.excluded })); }
   async saveShot(s) { const i = this.d.shots.findIndex(x => x.id === s.id); const c = structuredClone(s); i < 0 ? this.d.shots.push(c) : (this.d.shots[i] = c); this.save(); }
   async deleteShot(id) { this.d.shots = this.d.shots.filter(s => s.id !== id); this.d.raw.forEach(e => { if (e.shotId === id) e.shotId = null; }); this.save(); }
   async addRaw(e) { const id = this.d.nextRaw++; this.d.raw.push({ ...e, id, shotId: null }); if (this.d.raw.length > 3000) this.d.raw = this.d.raw.filter((x, i) => x.shotId || i > this.d.raw.length - 2000); this.save(); return id; }
@@ -1426,6 +1465,10 @@ async function makeStore() {
 const CLUBS = BANDS.ORDER;
 const SHORT = { "Driver": "Driver", "3 wood": "3W", "4 hybrid": "4H", "5 iron": "5i", "6 iron": "6i", "7 iron": "7i", "8 iron": "8i", "9 iron": "9i", "PW": "PW", "Gap wedge": "GW", "Sand wedge": "SW", "Lob wedge": "LW" };
 const DIAG = "diag", DIAG_OMNI_CLUB = "7 iron";
+const SWINGS = [["full", "Full", "Full swing"], ["2/3", "⅔", "⅔ swing"], ["1/3", "⅓", "⅓ swing"]];
+const SWING_SHORT = Object.fromEntries(SWINGS.map(([k, sh]) => [k, sh])), SWING_LONG = Object.fromEntries(SWINGS.map(([k, , lg]) => [k, lg]));
+const CSV_SWING = { full: "full", "2/3": "two-thirds", "1/3": "one-third" }; // "2/3" would turn into a date in Excel
+const swingOf = s => (SWING_LONG[s.swing] ? s.swing : "full");
 const FLAT = { height: () => 0, surface: () => "fairway", grad: () => [0, 0], pin: null };
 const YD = 0.9144, CUR_KEY = "omniRangeLab:current", V1_KEY = "omniRangeLab:v1";
 const $ = id => document.getElementById(id);
@@ -1441,16 +1484,18 @@ const lsSet = (k, v) => { try { localStorage.setItem(k, v); } catch {} };
 let store = null, storeInfo = null;
 const S = { players: [], shots: [], current: null };
 let conn = null, connStatus = { text: "Connect", cls: "" }, battery = null;
-let tab = "shot", allClubs = false, selId = null, anim = null, armed = null, rawKeep = false, importBytes = null;
+let tab = "shot", allClubs = false, allSwings = false, selId = null, anim = null, armed = null, rawKeep = false, importBytes = null;
 const live = [];               // raw packets seen this session, newest first
 let pending = [];              // packets that belong to the shot being received
 const shotRaw = new Map();     // shot id -> packets from this session
 
-function freshPlayer(name) { return { id: uid(), name, hand: "R", bag: CLUBS.slice(), club: "7 iron", band: "m-10-18", practiceYd: 150, practiceOn: false }; }
+function freshPlayer(name) { return { id: uid(), name, hand: "R", bag: CLUBS.slice(), club: "7 iron", swing: "full", band: "m-10-18", practiceYd: 150, practiceOn: false }; }
 const me = () => S.players.find(p => p.id === S.current) || S.players[0];
 const curClub = () => { const p = me(); return p.club === DIAG || p.bag.includes(p.club) ? p.club : (CLUBS.find(c => p.bag.includes(c)) || DIAG); };
+const curSwing = () => (SWING_LONG[me().swing] ? me().swing : "full");
 const shotsFor = (pid, club) => S.shots.filter(s => s.player === pid && (club === null || s.club === club));
-const viewShots = () => shotsFor(S.current, allClubs ? null : curClub());
+const viewShots = () => S.shots.filter(s => s.player === S.current && (allClubs || s.club === curClub()) && (allSwings || swingOf(s) === curSwing()));
+const viewLabel = () => `${allClubs ? "All clubs" : clubLong(curClub())} · ${allSwings ? "all swings" : SWING_LONG[curSwing()]}`;
 const persistPlayer = p => store.savePlayer(p).catch(e => toast("Couldn't save: " + e.message));
 const persistShot = s => store.saveShot(s).catch(e => toast("Couldn't save the shot: " + e.message));
 
@@ -1503,6 +1548,8 @@ function renderHUD() {
   const p = me(), cur = curClub();
   $("clubs").innerHTML = CLUBS.filter(c => p.bag.includes(c)).map(c => `<button class="chip${c === cur ? " sel" : ""}" data-c="${esc(c)}" title="${esc(c)}">${clubLabel(c)}</button>`).join("")
     + `<button class="chip diag${cur === DIAG ? " sel" : ""}" data-c="${DIAG}" title="Records against the diagnostic club. The Omni is told it's a 7 iron.">Any club</button>`;
+  const w = curSwing();
+  $("swings").innerHTML = SWINGS.map(([k, sh, lg]) => `<button class="${k === w ? "sel" : ""}" data-w="${k}" title="${lg}" aria-pressed="${k === w}">${sh}</button>`).join("");
   const b = $("conn"); b.textContent = connStatus.text; b.className = connStatus.cls;
   renderLive();
 }
@@ -1522,24 +1569,26 @@ function renderLive() {
 }
 $("players").onclick = e => { const b = e.target.closest("[data-p]"); if (b) switchPlayer(b.dataset.p); };
 $("clubs").onclick = e => { const b = e.target.closest("[data-c]"); if (b) switchClub(b.dataset.c); };
+$("swings").onclick = e => { const b = e.target.closest("[data-w]"); if (b) switchSwing(b.dataset.w); };
 $("addPlayer").onclick = () => {
   const p = freshPlayer(`Player ${S.players.length + 1}`); S.players.push(p); persistPlayer(p); switchPlayer(p.id); showTab("player");
   setTimeout(() => { const i = $("pName"); if (i) { i.focus(); i.select(); } }, 50);
 };
 function switchPlayer(id) { S.current = id; lsSet(CUR_KEY, id); selId = null; anim = null; tellOmni(); renderAll(); }
 function switchClub(c) { const p = me(); p.club = c; persistPlayer(p); selId = null; anim = null; tellOmni(); renderAll(); }
+function switchSwing(w) { const p = me(); if (curSwing() === w) return; p.swing = w; persistPlayer(p); selId = null; anim = null; renderAll(); }
 function tellOmni() {
   if (!conn || !conn.setClub) return;
   try { const r = conn.setClub(OG.clubCode(omniClubFor(curClub())), me().hand === "L"); r && r.catch && r.catch(() => {}); } catch {}
 }
 
 // ------------------------------------------------------------------ tabs
-const TABS = [["shot", "tShot", "pShot"], ["shots", "tShots", "pShots"], ["practice", "tPractice", "pPractice"], ["raw", "tRaw", "pRaw"], ["player", "tPlayer", "pPlayer"]];
+const TABS = [["shot", "tShot", "pShot"], ["shots", "tShots", "pShots"], ["dist", "tDist", "pDist"], ["practice", "tPractice", "pPractice"], ["raw", "tRaw", "pRaw"], ["player", "tPlayer", "pPlayer"]];
 function showTab(t) { tab = t; for (const [k, b, p] of TABS) { $(b).classList.toggle("sel", k === t); $(p).classList.toggle("show", k === t); } renderPanel(); }
 for (const [k, b] of TABS) $(b).onclick = () => showTab(k);
 function selected() { const list = viewShots(); return (selId && list.find(x => x.id === selId)) || list[list.length - 1] || null; }
 function renderPanel() {
-  if (tab === "shot") renderShot(); else if (tab === "shots") renderShots(); else if (tab === "practice") renderPractice(); else if (tab === "raw") renderRaw(); else renderPlayer();
+  if (tab === "shot") renderShot(); else if (tab === "shots") renderShots(); else if (tab === "dist") renderDist(); else if (tab === "practice") renderPractice(); else if (tab === "raw") renderRaw(); else renderPlayer();
   draw();
 }
 function renderAll() { renderHUD(); renderPanel(); }
@@ -1547,14 +1596,14 @@ function renderAll() { renderHUD(); renderPanel(); }
 // ------------------------------------------------------------------ Shot tab
 function renderShot() {
   const p = me(), club = curClub(), s = selected();
-  const head = `<div class="head"><b>${esc(p.name)}</b> · ${esc(clubLong(allClubs && s ? s.club : club))}</div>`;
+  const head = `<div class="head"><b>${esc(p.name)}</b> · ${esc(clubLong(s ? s.club : club))} · ${SWING_LONG[s ? swingOf(s) : curSwing()]}</div>`;
   if (!s) {
-    $("pShot").innerHTML = head + `<div class="empty">No shots yet with ${esc(clubLong(club))}. Connect the Omni and hit a ball, or try a test shot.</div><div class="row"><button class="go" id="bTest">Test shot</button></div>`;
+    $("pShot").innerHTML = head + `<div class="empty">No ${allSwings ? "" : SWING_LONG[curSwing()].toLowerCase() + " "}shots yet with ${allClubs ? "any club" : esc(clubLong(club))}. Connect the Omni and hit a ball, or try a test shot.</div><div class="row"><button class="go" id="bTest">Test shot</button></div>`;
     $("bTest").onclick = testShotSheet; return;
   }
   const c = calc(s), b = s.ball, cd = s.cd || {}, m = s.src === "manual" ? "test" : "meas";
   const n = viewShots().indexOf(s) + 1;
-  let h = head + `<div class="sub">Shot ${n} · ${time(s.ts)}${allClubs ? " · " + esc(clubLabel(s.club)) : ""}</div>`;
+  let h = head + `<div class="sub">Shot ${n} · ${time(s.ts)}${s.excluded ? ` · <span class="warn">left out of averages</span>` : ""}</div>`;
   h += `<div class="sec"><div class="sec-h">${srcBadge(s)}<span class="sec-note">${m === "test" ? "typed in by hand, not real data" : "real launch data, exactly as sent"}</span></div>`;
   h += `<div class="grid">${tile(m, "Ball speed", f1(b.speedMph), "mph")}${tile(m, "Launch", f1(b.vla), "°")}${dtile(m, "Direction", b.hla, "°")}${tile(m, "Total spin", f0(b.spinRpm), "rpm")}${dtile(m, "Spin axis", b.axisDeg, "°")}${tile(m, "Back / side spin", b.backSpin != null ? `${f0(b.backSpin)} / ${f0(b.sideSpin)}` : "–", "", true)}</div>`;
   if (s.cd) h += `<div class="grid" style="margin-top:6px">${tile(m, "Club speed", f1(cd.Speed), "mph")}${dtile(m, "Path", cd.Path, "°")}${dtile(m, "Face", cd.FaceToTarget, "°")}${tile(m, "Attack", f1(cd.AngleOfAttack), "°")}${tile(m, "Dynamic loft", f1(cd.Loft), "°")}${tile(m, "Smash", cd.Smash != null ? cd.Smash.toFixed(2) : "–")}${tile(m, "Impact H / V", cd.HorizontalFaceImpact != null ? `${f0(cd.HorizontalFaceImpact)} / ${f0(cd.VerticalFaceImpact)}` : "–", "mm", true)}</div>`;
@@ -1571,12 +1620,25 @@ function renderShot() {
   h += `<div class="grid">${tile("calc", "Carry", f1(c && c.carry), "yd")}${tile("calc", "Total", f1(c && c.total), "yd")}${dtile("calc", "Offline", c && c.side, "yd")}${tile("calc", "Apex", f1(c && c.apex), "yd")}${tile("calc", "Descent", f1(c && c.descent), "°")}${tile("calc", "Hang time", f1(c && c.hang), "s")}</div><canvas id="side"></canvas>`;
   h += `<div class="note">Still air, 15 °C, sea level, landing and rolling on fairway (Omni Golf v4 physics). R is right of the target line.</div></div>`;
   h += `<div class="sec"><div class="sec-h"><span class="badge calc">Square app carry</span><span class="sec-note">Square's own calculation, typed in to compare</span></div><div class="row"><input type="number" id="appCarry" inputmode="decimal" step="0.1" placeholder="yd" value="${s.app != null ? s.app : ""}"><span id="appDiff">${diffLine(c && c.carry, s.app)}</span></div></div>`;
+  const clubOpts = [...CLUBS.filter(c => p.bag.includes(c) || c === s.club), DIAG];
+  h += `<div class="sec"><div class="sec-h"><span class="badge plain">This shot</span><span class="sec-note">change the club or swing if they were wrong when you hit it</span></div>
+    <div class="row"><select id="sClub" aria-label="Club for this shot">${clubOpts.map(c => `<option value="${esc(c)}"${c === s.club ? " selected" : ""}>${esc(clubLong(c))}</option>`).join("")}</select>
+    <span class="seg" id="sSwing">${SWINGS.map(([k, sh, lg]) => `<button data-w="${k}" class="${k === swingOf(s) ? "sel" : ""}" title="${lg}">${sh}</button>`).join("")}</span>
+    <button id="sOut" class="${s.excluded ? "sel warnb" : ""}" title="A mishit you want to keep but not count">${s.excluded ? "Left out · count it again" : "Leave out of averages"}</button></div></div>`;
   h += `<div class="row"><button class="go" id="bTest">Test shot</button><button id="bReplay">Replay</button><button class="danger${armed === s.id ? " armed" : ""}" id="bDel">${armed === s.id ? "Tap again to delete" : "Delete shot"}</button></div>`;
   h += `<details id="rawShot"><summary>Raw packets for this shot</summary><div id="rawShotList" class="rawlist"><div class="muted">Loading…</div></div></details>`;
   $("pShot").innerHTML = h;
   $("appCarry").oninput = e => { const v = parseFloat(e.target.value); s.app = isFinite(v) && v > 0 ? v : null; persistShot(s); $("appDiff").innerHTML = diffLine(c && c.carry, s.app); };
   $("bTest").onclick = testShotSheet;
   $("bReplay").onclick = () => startAnim(s);
+  const retag = () => {
+    persistShot(s);
+    if (!viewShots().includes(s)) { selId = null; anim = null; toast(`Moved to ${clubLong(s.club)} · ${SWING_LONG[swingOf(s)]}`); }
+    renderAll();
+  };
+  $("sClub").onchange = e => { s.club = e.target.value; retag(); };
+  $("sSwing").onclick = e => { const b = e.target.closest("[data-w]"); if (b && b.dataset.w !== swingOf(s)) { s.swing = b.dataset.w; retag(); } };
+  $("sOut").onclick = () => { s.excluded = !s.excluded; persistShot(s); renderAll(); };
   $("bDel").onclick = () => {
     if (!arm(s.id, renderShot)) return;
     S.shots = S.shots.filter(x => x.id !== s.id); cache.delete(s.id); selId = null; anim = null;
@@ -1594,26 +1656,30 @@ function renderShot() {
 // ------------------------------------------------------------------ Shots tab
 function renderShots() {
   const p = me(), club = curClub(), list = viewShots();
-  let h = `<div class="row"><div class="head" style="flex:1;margin:0"><b>${esc(p.name)}</b> · ${allClubs ? "All clubs" : esc(clubLong(club))}</div><button id="bAll" class="${allClubs ? "sel" : ""}">All clubs</button></div>`;
-  if (list.length) {
-    const cs = list.map(calc).filter(Boolean), carries = cs.map(c => c.carry), withApp = list.filter(s => s.app != null && calc(s)), bs = list.map(s => s.ball);
-    const realOnly = list.filter(s => s.src !== "manual").length;
-    h += `<div class="sec"><div class="sec-h"><span class="badge meas">Measured averages</span><span class="sec-note">${list.length} shot${list.length === 1 ? "" : "s"}${realOnly < list.length ? `, ${list.length - realOnly} typed in` : ""}</span></div><div class="grid">${tile("meas", "Ball speed", f1(mean(bs.map(b => b.speedMph))), "mph")}${tile("meas", "Launch", f1(mean(bs.map(b => b.vla))), "°")}${tile("meas", "Spin", f0(mean(bs.map(b => b.spinRpm))), "rpm")}</div></div>`;
+  let h = `<div class="row"><div class="head" style="flex:1;margin:0"><b>${esc(p.name)}</b> · ${esc(viewLabel())}</div><button id="bAll" class="${allClubs ? "sel" : ""}">All clubs</button><button id="bAllW" class="${allSwings ? "sel" : ""}">All swings</button></div>`;
+  const used = list.filter(s => !s.excluded);
+  if (used.length) {
+    const cs = used.map(calc).filter(Boolean), carries = cs.map(c => c.carry), withApp = used.filter(s => s.app != null && calc(s)), bs = used.map(s => s.ball);
+    const typed = used.filter(s => s.src === "manual").length, out = list.length - used.length;
+    h += `<div class="sec"><div class="sec-h"><span class="badge meas">Measured averages</span><span class="sec-note">${used.length} shot${used.length === 1 ? "" : "s"}${typed ? `, ${typed} typed in` : ""}${out ? ` · ${out} left out` : ""}</span></div><div class="grid">${tile("meas", "Ball speed", f1(mean(bs.map(b => b.speedMph))), "mph")}${tile("meas", "Launch", f1(mean(bs.map(b => b.vla))), "°")}${tile("meas", "Spin", f0(mean(bs.map(b => b.spinRpm))), "rpm")}</div></div>`;
     h += `<div class="sec"><div class="sec-h"><span class="badge calc">Calculated</span></div><div class="grid">${tile("calc", "Avg carry", f1(mean(carries)), "yd")}${tile("calc", "Carry spread", sd(carries) != null ? "±" + f1(sd(carries)) : "–", "yd")}${dtile("calc", "Avg offline", mean(cs.map(c => c.side)), "yd")}</div>${withApp.length ? `<div class="note">Against Square's carry: ours is ${signed(mean(withApp.map(s => calc(s).carry - s.app)))} yd on average over ${withApp.length} shot${withApp.length === 1 ? "" : "s"}.</div>` : ""}</div>`;
-    h += `<div class="tablewrap"><table class="shots"><thead><tr class="grp"><th></th>${allClubs ? "<th></th>" : ""}<th colspan="4" class="gm">Measured</th><th colspan="3" class="gc">Calculated</th><th colspan="2" class="gc">Square app</th></tr>
-      <tr><th>#</th>${allClubs ? "<th>Club</th>" : ""}<th class="gm">Ball</th><th class="gm">Launch</th><th class="gm">Spin</th><th class="gm">Axis</th><th class="gc">Carry</th><th class="gc">Total</th><th class="gc">Offline</th><th class="gc">Carry</th><th class="gc">Δ</th></tr></thead><tbody>`;
+  }
+  if (list.length) {
+    h += `<div class="tablewrap"><table class="shots"><thead><tr class="grp"><th></th>${allClubs ? "<th></th>" : ""}${allSwings ? "<th></th>" : ""}<th colspan="4" class="gm">Measured</th><th colspan="3" class="gc">Calculated</th><th colspan="2" class="gc">Square app</th></tr>
+      <tr><th>#</th>${allClubs ? "<th>Club</th>" : ""}${allSwings ? "<th>Swing</th>" : ""}<th class="gm">Ball</th><th class="gm">Launch</th><th class="gm">Spin</th><th class="gm">Axis</th><th class="gc">Carry</th><th class="gc">Total</th><th class="gc">Offline</th><th class="gc">Carry</th><th class="gc">Δ</th></tr></thead><tbody>`;
     const pick = selected();
     list.forEach((s, i) => {
       const c = calc(s) || {};
-      h += `<tr data-s="${s.id}" class="${pick && pick.id === s.id ? "pick" : ""}${s.src === "manual" ? " typed" : ""}"><td>${i + 1}${s.src === "manual" ? "*" : ""}</td>${allClubs ? `<td>${esc(clubLabel(s.club))}</td>` : ""}<td class="mv">${f1(s.ball.speedMph)}</td><td class="mv">${f1(s.ball.vla)}</td><td class="mv">${f0(s.ball.spinRpm)}</td><td class="mv">${lr(s.ball.axisDeg)}</td><td class="cv">${f1(c.carry)}</td><td class="cv">${f1(c.total)}</td><td class="cv">${lr(c.side)}</td><td class="cv">${s.app != null ? f1(s.app) : "–"}</td><td class="cv">${s.app != null && c.carry ? signed(c.carry - s.app) : "–"}</td></tr>`;
+      h += `<tr data-s="${s.id}" class="${pick && pick.id === s.id ? "pick" : ""}${s.src === "manual" ? " typed" : ""}${s.excluded ? " out" : ""}"><td>${i + 1}${s.src === "manual" ? "*" : ""}</td>${allClubs ? `<td>${esc(clubLabel(s.club))}</td>` : ""}${allSwings ? `<td>${SWING_SHORT[swingOf(s)]}</td>` : ""}<td class="mv">${f1(s.ball.speedMph)}</td><td class="mv">${f1(s.ball.vla)}</td><td class="mv">${f0(s.ball.spinRpm)}</td><td class="mv">${lr(s.ball.axisDeg)}</td><td class="cv">${f1(c.carry)}</td><td class="cv">${f1(c.total)}</td><td class="cv">${lr(c.side)}</td><td class="cv">${s.app != null ? f1(s.app) : "–"}</td><td class="cv">${s.app != null && c.carry ? signed(c.carry - s.app) : "–"}</td></tr>`;
     });
-    h += `</tbody></table></div><div class="note">* typed in. Tap a row to see that shot. Δ is our carry minus Square's.</div>`;
+    h += `</tbody></table></div><div class="note">* typed in. Crossed-out shots are left out of averages. Tap a row to see that shot. Δ is our carry minus Square's.</div>`;
   } else h += `<div class="empty">No shots to show yet.</div>`;
   h += `<h3>Data</h3><div class="note" id="dbInfo" style="margin-top:0">${esc(storeInfo.detail)}</div>
     <div class="row"><button id="bCsv">Export shots (CSV)</button><button id="bDbOut">Export database</button><label class="btn" for="dbIn">Import database</label><input type="file" id="dbIn" accept=".sqlite,.db,.zip,.json" hidden></div>
     ${importBytes ? `<div class="row"><span class="warn">Replace everything with ${esc(importBytes.name)}?</span><button class="danger${armed === "import" ? " armed" : ""}" id="bImport">${armed === "import" ? "Tap again to replace" : "Replace my data"}</button><button id="bImportNo">Cancel</button></div>` : ""}`;
   $("pShots").innerHTML = h;
   $("bAll").onclick = () => { allClubs = !allClubs; selId = null; anim = null; renderAll(); };
+  $("bAllW").onclick = () => { allSwings = !allSwings; selId = null; anim = null; renderAll(); };
   $("bCsv").onclick = exportCsv; $("bDbOut").onclick = exportDb;
   $("dbIn").onchange = async e => { const f = e.target.files[0]; if (!f) return; importBytes = { name: f.name, bytes: new Uint8Array(await f.arrayBuffer()) }; renderShots(); };
   if ($("bImport")) { $("bImport").onclick = () => { if (arm("import", renderShots)) importDb(); }; $("bImportNo").onclick = () => { importBytes = null; renderShots(); }; }
@@ -1621,6 +1687,113 @@ function renderShots() {
   if (tb) tb.onclick = e => { const r = e.target.closest("tr[data-s]"); if (!r) return; selId = r.dataset.s; const s = S.shots.find(x => x.id === selId); renderHUD(); renderPanel(); if (s) startAnim(s); };
   store.stats().then(st => { const el = $("dbInfo"); if (el) el.textContent = `${storeInfo.detail}. ${st.players} player${st.players === 1 ? "" : "s"}, ${st.shots} shots, ${st.raw} raw packets, ${(st.bytes / 1024).toFixed(0)} KB.`; }).catch(() => {});
 }
+
+// ------------------------------------------------------------------ Distances tab
+// Each club's distances at each swing length. Only real shots count: typed-in test shots, "Any
+// club" and shots left out (mishits) are skipped. Carry and total are calculated, so they're shown
+// apart from the averages of what the Omni measured.
+const PERIODS = [["all", "All time"], ["30", "Last 30 days"], ["today", "Today"]];
+let distPeriod = PERIODS.some(([k]) => k === lsGet("omniRangeLab:distPeriod")) ? lsGet("omniRangeLab:distPeriod") : "all", distSel = null;
+function periodStart(k) { if (k === "30") return Date.now() - 30 * 864e5; if (k === "today") { const d = new Date(); d.setHours(0, 0, 0, 0); return d.getTime(); } return 0; }
+// [label, value, decimals, unit, kind]: kind "lr" shows left/right, "sign" shows + or −
+const AVG_BALL = [["Ball speed", s => s.ball.speedMph, 1, "mph"], ["Launch", s => s.ball.vla, 1, "°"], ["Direction", s => s.ball.hla, 1, "°", "lr"], ["Total spin", s => s.ball.spinRpm, 0, "rpm"], ["Spin axis", s => s.ball.axisDeg, 1, "°", "lr"], ["Back spin", s => s.ball.backSpin, 0, "rpm"], ["Side spin", s => s.ball.sideSpin, 0, "rpm", "sign"]];
+const AVG_CLUB = [["Club speed", s => s.cd && s.cd.Speed, 1, "mph"], ["Path", s => s.cd && s.cd.Path, 1, "°", "lr"], ["Face", s => s.cd && s.cd.FaceToTarget, 1, "°", "lr"], ["Attack", s => s.cd && s.cd.AngleOfAttack, 1, "°", "sign"], ["Dynamic loft", s => s.cd && s.cd.Loft, 1, "°"], ["Smash", s => s.cd && s.cd.Smash, 2, ""], ["Impact H", s => s.cd && s.cd.HorizontalFaceImpact, 0, "mm", "sign"], ["Impact V", s => s.cd && s.cd.VerticalFaceImpact, 0, "mm", "sign"]];
+const AVG_CALC = [["Carry", c => c.carry, 1, "yd"], ["Total", c => c.total, 1, "yd"], ["Offline", c => c.side, 1, "yd", "lr"], ["Apex", c => c.apex, 1, "yd"], ["Descent", c => c.descent, 1, "°"], ["Hang time", c => c.hang, 1, "s"]];
+function stat(vals) {
+  const v = vals.filter(x => x != null && isFinite(x));
+  return v.length ? { n: v.length, mean: mean(v), sd: sd(v), min: Math.min(...v), max: Math.max(...v) } : null;
+}
+function avgTile(cls, k, st, d, u, kind) {
+  if (!st) return tile(cls, k, "–");
+  const v = st.mean, zero = Math.abs(v) < 0.5 / 10 ** d;
+  let n = v.toFixed(d), uu = u;
+  if (kind === "lr") { n = zero ? (0).toFixed(d) : Math.abs(v).toFixed(d); if (!zero) uu = `${u} ${v > 0 ? "R" : "L"}`; }
+  else if (kind === "sign") n = zero ? (0).toFixed(d) : signed(v, d);
+  const spr = st.n > 1 && st.sd != null ? `±${st.sd.toFixed(d)}${u && u !== "°" ? " " + u : u}` : "1 shot";
+  return `<div class="tile ${cls}"><div class="k">${k}</div><div class="n">${n}<span class="u">${uu}</span></div><div class="spr">${spr}</div></div>`;
+}
+function distData(pid = S.current, period = distPeriod) {
+  const p = S.players.find(x => x.id === pid), t0 = periodStart(period);
+  const pool = S.shots.filter(s => s.player === pid && s.club !== DIAG && s.src !== "manual" && s.ts >= t0);
+  const clubs = CLUBS.filter(c => pool.some(s => s.club === c));
+  const cells = {};
+  for (const c of clubs) for (const [w] of SWINGS) {
+    const all = pool.filter(s => s.club === c && swingOf(s) === w), used = all.filter(s => !s.excluded), cs = used.map(calc).filter(Boolean);
+    cells[`${c}|${w}`] = { club: c, swing: w, all, used, carry: stat(cs.map(x => x.carry)), total: stat(cs.map(x => x.total)) };
+  }
+  const empty = p ? p.bag.filter(c => CLUBS.includes(c) && !clubs.includes(c)) : [];
+  return { pool, clubs, cells, empty };
+}
+function renderDist() {
+  const p = me(), D = distData();
+  let h = `<div class="row"><div class="head" style="flex:1;margin:0"><b>${esc(p.name)}</b> · distances</div>${PERIODS.map(([k, l]) => `<button data-per="${k}" class="${distPeriod === k ? "sel" : ""}">${l}</button>`).join("")}</div>`;
+  if (!D.clubs.length) {
+    h += `<div class="empty">No measured shots ${distPeriod === "all" ? "yet" : "in this time"}. Pick a club and a swing at the top and hit some balls. Typed-in test shots and "Any club" don't count towards distances.</div>`;
+    $("pDist").innerHTML = h; bindPeriod(); return;
+  }
+  const keyed = Object.values(D.cells).filter(c => c.carry);
+  if (!distSel || !D.cells[distSel] || !D.cells[distSel].all.length) {
+    const mine = `${curClub()}|${curSwing()}`;
+    distSel = D.cells[mine] && D.cells[mine].all.length ? mine : (Object.keys(D.cells).find(k => D.cells[k].all.length) || null);
+  }
+  // the distance ladder: one lane per swing, a dot at the average carry and a bar for the spread
+  const top = Math.max(50, ...keyed.map(c => c.carry.mean + (c.carry.sd || 0))) * 1.05, step = top > 160 ? 50 : 25, scale = Math.ceil(top / step) * step;
+  const pc = v => `${Math.max(0, Math.min(100, 100 * v / scale)).toFixed(2)}%`;
+  h += `<div class="sec"><div class="sec-h"><span class="badge calc">Average carry</span><span class="sec-note">calculated from each shot's measured launch data</span></div><div class="ladder">`;
+  for (const c of D.clubs) {
+    h += `<div class="lad"><span class="ll">${esc(SHORT[c] || c)}</span><div class="lt">`;
+    SWINGS.forEach(([w, sh, lg], i) => {
+      const cell = D.cells[`${c}|${w}`]; if (!cell || !cell.carry) return;
+      const m = cell.carry.mean, e = cell.carry.sd || 0, y = 3 + i * 6;
+      if (e) h += `<span class="spread s${i}" style="left:${pc(m - e)};width:calc(${pc(m + e)} - ${pc(m - e)});top:${y + 2}px"></span>`;
+      h += `<span class="dot s${i}" style="left:${pc(m)};top:${y}px" title="${esc(c)} · ${lg}: ≈${f0(m)} yd carry"></span>`;
+    });
+    h += `</div></div>`;
+  }
+  h += `<div class="lad ticks"><span class="ll"></span><div class="lt">${Array.from({ length: scale / step + 1 }, (_, i) => `<span style="left:${pc(i * step)}">${i * step}</span>`).join("")}</div></div></div>`;
+  h += `<div class="legend">${SWINGS.map(([w, sh, lg], i) => `<span><i class="dot s${i}"></i>${lg}</span>`).join("")}<span class="muted">bar: ± spread · yd</span></div></div>`;
+  // the table: tap a cell for everything behind it
+  h += `<div class="tablewrap"><table class="dist"><thead><tr><th>Club</th><th>Full</th><th title="Full-swing carry difference from the next longer club">Gap</th><th>⅔</th><th>⅓</th></tr></thead><tbody>`;
+  let prevFull = null;
+  for (const c of D.clubs) {
+    const cellTd = w => {
+      const cell = D.cells[`${c}|${w}`], k = `${c}|${w}`;
+      if (!cell.all.length) return `<td class="dc none">–</td>`;
+      const out = cell.all.length - cell.used.length;
+      return `<td class="dc${distSel === k ? " sel" : ""}" data-k="${esc(k)}">${cell.carry ? `<b>≈${f0(cell.carry.mean)}</b>` : `<b>–</b>`}<small>${cell.used.length}${cell.carry && cell.carry.sd != null ? ` · ±${f0(cell.carry.sd)}` : ""}${out ? ` · ${out} out` : ""}</small></td>`;
+    };
+    const full = D.cells[`${c}|full`].carry, gap = full && prevFull != null ? prevFull - full.mean : null;
+    h += `<tr><td>${esc(SHORT[c] || c)}</td>${cellTd("full")}<td class="gap">${gap != null ? f0(gap) : ""}</td>${cellTd("2/3")}${cellTd("1/3")}</tr>`;
+    if (full) prevFull = full.mean;
+  }
+  h += `</tbody></table></div><div class="note">≈ average carry in yards, then the number of shots and the spread. Gap is how much shorter each full swing is than the club above. ${D.empty.length ? `No shots yet with ${D.empty.map(c => esc(SHORT[c] || c)).join(", ")}.` : ""}</div>`;
+  // the chosen club and swing in full
+  const cell = distSel && D.cells[distSel];
+  if (cell) {
+    const used = cell.used, cs = used.map(calc).filter(Boolean), withCd = used.filter(s => s.cd).length, out = cell.all.length - used.length;
+    const what = `${esc(cell.club)} · ${SWING_LONG[cell.swing]}`;
+    h += `<h3>${what}</h3>`;
+    if (!used.length) h += `<div class="empty">All ${cell.all.length} shot${cell.all.length === 1 ? " is" : "s are"} left out of averages.</div>`;
+    else {
+      h += `<div class="sec"><div class="sec-h"><span class="badge meas">Averages · measured</span><span class="sec-note">${used.length} shot${used.length === 1 ? "" : "s"}${out ? `, ${out} left out` : ""} · ± is the spread</span></div>`;
+      h += `<div class="grid">${AVG_BALL.map(([k, g, d, u, kind]) => avgTile("meas", k, stat(used.map(g)), d, u, kind)).join("")}</div>`;
+      h += withCd ? `<div class="note">Club data on ${withCd} of ${used.length} shot${used.length === 1 ? "" : "s"}</div><div class="grid" style="margin-top:6px">${AVG_CLUB.map(([k, g, d, u, kind]) => avgTile("meas", k, stat(used.map(g)), d, u, kind)).join("")}</div>`
+        : `<div class="note">No club data on these shots. The Omni only sends it when the app asks for it.</div>`;
+      h += `</div><div class="sec"><div class="sec-h"><span class="badge calc">Averages · calculated</span><span class="sec-note">our physics, shot by shot</span></div>`;
+      h += `<div class="grid">${AVG_CALC.map(([k, g, d, u, kind]) => avgTile("calc", k, stat(cs.map(g)), d, u, kind)).join("")}</div>`;
+      const cr = stat(cs.map(c => c.carry)), app = stat(used.map(s => s.app));
+      if (cr) h += `<div class="note">Carry from ${f1(cr.min)} to ${f1(cr.max)} yd. About two shots in three land within the ± spread of the average.${app ? ` Square's carry averages ${f1(app.mean)} yd over ${app.n} shot${app.n === 1 ? "" : "s"}.` : ""}</div>`;
+      h += `</div>`;
+    }
+    const isCur = cell.club === curClub() && cell.swing === curSwing();
+    h += `<div class="row"><button id="dUse" class="${isCur ? "sel" : "go"}"${isCur ? " disabled" : ""}>${isCur ? "This is the club and swing you're on" : `Hit this: ${esc(SHORT[cell.club] || cell.club)}, ${SWING_LONG[cell.swing].toLowerCase()}`}</button></div>`;
+  }
+  $("pDist").innerHTML = h;
+  bindPeriod();
+  $("pDist").querySelector("tbody").onclick = e => { const td = e.target.closest("td[data-k]"); if (td) { distSel = td.dataset.k; renderDist(); } };
+  if ($("dUse")) $("dUse").onclick = () => { const c = D.cells[distSel]; if (!c) return; if (c.club !== curClub()) switchClub(c.club); if (c.swing !== curSwing()) switchSwing(c.swing); showTab("shot"); };
+}
+function bindPeriod() { $("pDist").querySelectorAll("[data-per]").forEach(b => (b.onclick = () => { distPeriod = b.dataset.per; lsSet("omniRangeLab:distPeriod", distPeriod); renderDist(); })); }
 
 // ------------------------------------------------------------------ Practice tab
 function renderPractice() {
@@ -1737,7 +1910,7 @@ RawTap.on(e => {
 function record(ball, cd, src) {
   if (!ball || !(ball.speedMph > 0)) return;
   const raws = src === "manual" ? [] : pending; if (src !== "manual") pending = [];
-  const s = { id: uid(), ts: Date.now(), player: S.current, club: curClub(), src,
+  const s = { id: uid(), ts: Date.now(), player: S.current, club: curClub(), swing: curSwing(), excluded: false, src,
     ball: { speedMph: +ball.speedMph, vla: +ball.vla, hla: +ball.hla || 0, spinRpm: +ball.spinRpm || 0, axisDeg: +ball.axisDeg || 0, backSpin: null, sideSpin: null }, cd: cd || null, app: null, target: null };
   const pkt = raws.find(r => r.kind === "shot");
   if (pkt) { s.ball.backSpin = pkt.decoded.fields.backSpinRpm; s.ball.sideSpin = pkt.decoded.fields.sideSpinRpm; }
@@ -1753,14 +1926,14 @@ function record(ball, cd, src) {
   if (tab === "player") showTab("shot");
   renderAll(); startAnim(s);
   const c = calc(s);
-  if (src !== "manual") toast(`${me().name} · ${clubLabel(s.club)} · ${f1(s.ball.speedMph)} mph${c ? ` · ≈${f1(c.carry)} yd` : ""}`);
+  if (src !== "manual") toast(`${me().name} · ${clubLabel(s.club)}${s.swing !== "full" ? " " + SWING_SHORT[s.swing] : ""} · ${f1(s.ball.speedMph)} mph${c ? ` · ≈${f1(c.carry)} yd` : ""}`);
 }
 
 // ------------------------------------------------------------------ test shot sheet
 function testShotSheet() {
   const club = omniClubFor(curClub()), p = BANDS.profile(me().band || "m-10-18")[club];
   const last = selected(), v = last ? last.ball : BANDS.shotAt(p, p.ball);
-  openSheet(`<h2>Test shot</h2><div class="note" style="margin-top:0">Type in launch numbers to fly a ball without the Omni. It's recorded against ${esc(me().name)} and ${esc(clubLong(curClub()))} and marked as typed in, so it never passes for real data.</div>
+  openSheet(`<h2>Test shot</h2><div class="note" style="margin-top:0">Type in launch numbers to fly a ball without the Omni. It's recorded against ${esc(me().name)}, ${esc(clubLong(curClub()))} and a ${SWING_LONG[curSwing()].toLowerCase()}, and marked as typed in, so it never passes for real data or counts towards your distances.</div>
     <div class="fields">
       <label class="f">Ball speed (mph)<input type="number" id="mSp" step="0.1" value="${v.speedMph}"></label>
       <label class="f">Launch angle (°)<input type="number" id="mVla" step="0.1" value="${v.vla}"></label>
@@ -1918,12 +2091,12 @@ async function download(name, data) {
   const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([data])); a.download = name; document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
 }
 function exportCsv() {
-  const cols = ["time", "player", "club", "source", "omni_ball_speed_mph", "omni_launch_deg", "omni_direction_deg", "omni_total_spin_rpm", "omni_spin_axis_deg", "omni_back_spin_rpm", "omni_side_spin_rpm", "omni_club_speed_mph", "omni_path_deg", "omni_face_deg", "omni_attack_deg", "omni_dynamic_loft_deg", "omni_impact_h_mm", "omni_impact_v_mm", "omni_smash", "calc_carry_yd", "calc_total_yd", "calc_apex_yd", "calc_offline_yd", "calc_descent_deg", "calc_hang_s", "square_app_carry_yd", "calc_minus_app_yd", "target_yd", "target_band", "target_ball_speed_mph", "target_launch_deg", "target_spin_rpm"];
+  const cols = ["time", "player", "club", "swing", "source", "left_out", "omni_ball_speed_mph", "omni_launch_deg", "omni_direction_deg", "omni_total_spin_rpm", "omni_spin_axis_deg", "omni_back_spin_rpm", "omni_side_spin_rpm", "omni_club_speed_mph", "omni_path_deg", "omni_face_deg", "omni_attack_deg", "omni_dynamic_loft_deg", "omni_impact_h_mm", "omni_impact_v_mm", "omni_smash", "calc_carry_yd", "calc_total_yd", "calc_apex_yd", "calc_offline_yd", "calc_descent_deg", "calc_hang_s", "square_app_carry_yd", "calc_minus_app_yd", "target_yd", "target_band", "target_ball_speed_mph", "target_launch_deg", "target_spin_rpm"];
   const name = id => (S.players.find(p => p.id === id) || {}).name || "";
   const q = v => v == null || (typeof v === "number" && !isFinite(v)) ? "" : typeof v === "number" ? String(Math.round(v * 100) / 100) : /[",\n]/.test(v) ? `"${String(v).replace(/"/g, '""')}"` : String(v);
   const rows = S.shots.map(s => {
     const c = calc(s) || {}, b = s.ball, d = s.cd || {}, t = s.target || {}, n = t.need || {};
-    return [new Date(s.ts).toISOString(), name(s.player), clubLong(s.club), s.src === "manual" ? "typed" : s.src, b.speedMph, b.vla, b.hla, b.spinRpm, b.axisDeg, b.backSpin, b.sideSpin, d.Speed, d.Path, d.FaceToTarget, d.AngleOfAttack, d.Loft, d.HorizontalFaceImpact, d.VerticalFaceImpact, d.Smash, c.carry, c.total, c.apex, c.side, c.descent, c.hang, s.app, s.app != null && c.carry ? c.carry - s.app : null, t.yd, t.band, n.speedMph, n.vla, n.spinRpm].map(q).join(",");
+    return [new Date(s.ts).toISOString(), name(s.player), clubLong(s.club), CSV_SWING[swingOf(s)], s.src === "manual" ? "typed" : s.src, s.excluded ? "yes" : "", b.speedMph, b.vla, b.hla, b.spinRpm, b.axisDeg, b.backSpin, b.sideSpin, d.Speed, d.Path, d.FaceToTarget, d.AngleOfAttack, d.Loft, d.HorizontalFaceImpact, d.VerticalFaceImpact, d.Smash, c.carry, c.total, c.apex, c.side, c.descent, c.hang, s.app, s.app != null && c.carry ? c.carry - s.app : null, t.yd, t.band, n.speedMph, n.vla, n.spinRpm].map(q).join(",");
   });
   download(`range-lab-shots-${new Date().toISOString().slice(0, 10)}.csv`, [cols.join(","), ...rows].join("\n") + "\n");
 }
@@ -2039,7 +2212,7 @@ function draw() {
   }
   ctx.font = "600 11px -apple-system, system-ui, sans-serif"; ctx.textAlign = "left"; ctx.textBaseline = "alphabetic"; ctx.fillStyle = "rgba(255,255,255,.6)";
   ctx.fillText(r.w > 560 ? "Flight and landing spots are calculated from the measured launch data" : "Flight and landing: calculated", r.x + 10, r.y + r.h - 8);
-  if (!cs.length) { ctx.fillStyle = "rgba(255,255,255,.8)"; ctx.font = "600 14px -apple-system, system-ui, sans-serif"; ctx.textAlign = "center"; ctx.fillText(`${me().name} · ${clubLong(curClub())}: no shots yet`, cx, Y(L * 0.55)); }
+  if (!cs.length) { ctx.fillStyle = "rgba(255,255,255,.8)"; ctx.font = "600 14px -apple-system, system-ui, sans-serif"; ctx.textAlign = "center"; ctx.fillText(`${me().name} · ${viewLabel()}: no shots yet`, cx, Y(L * 0.55)); }
 }
 function label(t, x, y, kind) {
   ctx.font = "700 12px -apple-system, system-ui, sans-serif"; ctx.textAlign = "left"; ctx.textBaseline = "middle";
@@ -2099,7 +2272,7 @@ async function reload() {
 })();
 addEventListener("pagehide", () => { store && store.flush && store.flush(); });
 document.addEventListener("visibilitychange", () => { if (document.hidden && store && store.flush) store.flush(); });
-window.rangeLab = { S, get store() { return store; }, get info() { return storeInfo; }, record, calc, solve, BANDS, RawTap, live };
+window.rangeLab = { S, get store() { return store; }, get info() { return storeInfo; }, record, calc, solve, BANDS, RawTap, live, distData };
 
 </script>
 </body>
