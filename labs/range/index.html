@@ -1,0 +1,1169 @@
+<!DOCTYPE html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Range Lab</title>
+<style>
+  :root { --glass: rgba(14,22,18,0.86); --line: rgba(255,255,255,0.16); --acc: #86efac; --warn: #fcd34d; }
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #3f6d2f; font-family: -apple-system, system-ui, "Segoe UI", sans-serif; color: #fff; -webkit-tap-highlight-color: transparent; }
+  #c { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
+  button { font: inherit; font-weight: 600; font-size: 13px; color: #fff; background: rgba(255,255,255,0.08); border: 1px solid var(--line); border-radius: 10px; padding: 6px 10px; min-height: 34px; cursor: pointer; white-space: nowrap; }
+  button.sel { background: #166534; border-color: var(--acc); }
+  button.go { background: #0369a1; border-color: #38bdf8; }
+  button.danger { border-color: #f87171; }
+  button.armed { background: #991b1b; border-color: #f87171; }
+  button:disabled { opacity: .45; cursor: default; }
+  #hud { position: fixed; left: 10px; right: 10px; top: max(10px, env(safe-area-inset-top)); display: flex; flex-direction: column; gap: 6px; pointer-events: none; }
+  .bar { display: flex; gap: 6px; align-items: center; pointer-events: auto; background: var(--glass); border: 1px solid var(--line); border-radius: 12px; padding: 6px 8px; backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); }
+  .bar .lbl { font-size: 11px; opacity: .65; text-transform: uppercase; letter-spacing: .05em; flex: none; width: 46px; }
+  .chips { display: flex; gap: 6px; overflow-x: auto; flex: 1; min-width: 0; scrollbar-width: none; }
+  .chips::-webkit-scrollbar { display: none; }
+  #title { font-weight: 700; font-size: 14px; flex: none; margin-right: 4px; }
+  #conn { flex: none; }
+  #conn.ok { border-color: var(--acc); color: #bbf7d0; }
+  #conn.busy { border-color: var(--warn); color: #fde68a; }
+  .chip.diag { border-style: dashed; }
+  .chip.diag.sel { background: #713f12; border-color: var(--warn); border-style: solid; }
+  #panel { position: fixed; left: 10px; right: 10px; bottom: max(10px, env(safe-area-inset-bottom)); margin: 0 auto; max-width: 860px; background: var(--glass); border: 1px solid var(--line); border-radius: 16px; padding: 8px 12px 10px; backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); max-height: 46vh; overflow: auto; box-sizing: border-box; }
+  @media (min-width: 1000px) { #panel { left: auto; right: 10px; top: 10px; bottom: auto; width: 440px; max-width: none; max-height: calc(100vh - 20px); margin: 0; } #hud { right: 470px; } }
+  .tabs { display: flex; gap: 6px; margin-bottom: 6px; position: sticky; top: -8px; background: transparent; }
+  .tabs button { flex: 1; }
+  .pane { display: none; } .pane.show { display: block; }
+  h3 { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; opacity: .7; margin: 12px 0 6px; font-weight: 600; }
+  .head { font-size: 13px; opacity: .9; margin: 2px 0 4px; }
+  .head b { color: #bbf7d0; }
+  .grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
+  .stat { background: rgba(255,255,255,.05); border: 1px solid rgba(255,255,255,.1); border-radius: 10px; padding: 5px 8px; min-width: 0; }
+  .stat .k { font-size: 11px; opacity: .7; }
+  .stat .n { font-size: 18px; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .stat .u { font-size: 11px; opacity: .7; margin-left: 2px; font-weight: 600; }
+  .stat.big .n { font-size: 24px; color: #bbf7d0; }
+  .row { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; margin: 6px 0; }
+  .note { font-size: 11.5px; opacity: .65; line-height: 1.45; margin-top: 10px; }
+  .empty { font-size: 13px; opacity: .8; line-height: 1.5; padding: 8px 0; }
+  .diff { font-size: 13px; font-weight: 600; }
+  .diff.good { color: #bbf7d0; } .diff.meh { color: #fde68a; } .diff.bad { color: #fca5a5; }
+  input[type=number], input[type=text] { font: inherit; font-size: 16px; color: #fff; background: rgba(255,255,255,.08); border: 1px solid var(--line); border-radius: 8px; padding: 5px 8px; width: 96px; box-sizing: border-box; }
+  input[type=text] { width: 100%; }
+  label.f { display: flex; flex-direction: column; gap: 3px; font-size: 11.5px; opacity: .9; }
+  table { width: 100%; border-collapse: collapse; font-size: 12px; font-variant-numeric: tabular-nums; }
+  th { text-align: right; opacity: .65; font-weight: 600; padding: 3px 4px; white-space: nowrap; }
+  td { text-align: right; padding: 4px; border-top: 1px solid rgba(255,255,255,.08); white-space: nowrap; }
+  th:first-child, td:first-child { text-align: left; }
+  tr.pick td { background: rgba(134,239,172,.14); }
+  tbody tr { cursor: pointer; }
+  tr.avg td { font-weight: 700; border-top: 1px solid var(--line); cursor: default; }
+  #dlg { position: fixed; inset: 0; background: rgba(0,0,0,.5); display: none; align-items: center; justify-content: center; z-index: 10; }
+  #dlg.show { display: flex; }
+  .sheet { background: #0f1a14; border: 1px solid var(--line); border-radius: 16px; padding: 14px 16px; width: min(440px, calc(100vw - 24px)); max-height: 85vh; overflow: auto; box-sizing: border-box; }
+  .sheet h2 { font-size: 16px; margin: 0 0 8px; }
+  .sheet .fields { display: grid; grid-template-columns: repeat(auto-fill, minmax(118px, 1fr)); gap: 8px; margin: 8px 0; }
+  .sheet .fields input { width: 100%; }
+  #side { display: block; width: 100%; height: 100px; margin-top: 6px; border-radius: 10px; background: rgba(255,255,255,.04); border: 1px solid rgba(255,255,255,.1); }
+  #toast { position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%); background: rgba(0,0,0,.8); border: 1px solid var(--line); padding: 10px 14px; border-radius: 12px; font-size: 14px; font-weight: 600; opacity: 0; transition: opacity .25s; pointer-events: none; z-index: 20; max-width: 80vw; text-align: center; }
+  #toast.show { opacity: 1; }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+
+<div id="hud">
+  <div class="bar"><span id="title">Range Lab</span><div class="chips" id="players"></div><button id="addPlayer" title="Add a player">+ Player</button><button id="conn">Connect</button></div>
+  <div class="bar"><span class="lbl">Club</span><div class="chips" id="clubs"></div></div>
+</div>
+
+<div id="panel">
+  <div class="tabs"><button id="tShot" class="sel">Shot</button><button id="tShots">Shots</button><button id="tPlayer">Player &amp; bag</button></div>
+  <div class="pane show" id="pShot"></div>
+  <div class="pane" id="pShots"></div>
+  <div class="pane" id="pPlayer"></div>
+</div>
+
+<div id="dlg"><div class="sheet" id="sheet"></div></div>
+<div id="toast"></div>
+
+<script>
+// Omni Golf engine pieces, copied verbatim from Omni Golf v4 (game/v4/index.html).
+// Only formatting differs, so the Range Lab runs exactly the game's ball flight and Omni code.
+const OG = (() => {
+  var ZS, Ic, we, J0, cf, j0, zi, In, ki, de, Fs, Ui, Wn, Fi;
+  ((ZS = (2 * Math.PI) / 60),
+    (Ic = 9.80665),
+    (we = { m: 0.04593, r: 0.021335, k: 0.4 }),
+    (J0 = Math.PI * we.r * we.r),
+    (cf = { cdLo: 0.5, cdHigh: 0.205, cdSlope: -0.002, cdSpin: 0.315, a: 0.495, b: 0.483, cm: 0.0121 }),
+    (j0 = {}));
+  zi = {
+    tee: { name: "Tee", e: 0.25, mu: 0.45, mk: 0.35, crater: 16, roll: 3.2 },
+    fairway: { name: "Fairway", e: 0.25, mu: 0.45, mk: 0.35, crater: 16, roll: 3.2 },
+    semi: { name: "First cut", e: 0.22, mu: 0.5, mk: 0.4, crater: 15, roll: 4.5 },
+    rough: { name: "Rough", e: 0.16, mu: 0.6, mk: 0.5, crater: 12, roll: 7 },
+    deep: { name: "Deep rough", e: 0.1, mu: 0.7, mk: 0.6, crater: 10, roll: 11 },
+    fringe: { name: "Fringe", e: 0.24, mu: 0.45, mk: 0.35, crater: 17, roll: 1.4 },
+    green: { name: "Green", e: 0.24, mu: 0.42, mk: 0.3, crater: 18, roll: QS(10) },
+    sand: { name: "Bunker", e: 0.05, mu: 0.9, mk: 0.8, crater: 0, roll: 12 },
+    water: { name: "Water" },
+    ob: { name: "Out of bounds" },
+  };
+  ((In = (n, t) => [n[0] + t[0], n[1] + t[1], n[2] + t[2]]),
+    (ki = (n, t) => [n[0] - t[0], n[1] - t[1], n[2] - t[2]]),
+    (de = (n, t) => [n[0] * t, n[1] * t, n[2] * t]),
+    (Fs = (n, t) => n[0] * t[0] + n[1] * t[1] + n[2] * t[2]),
+    (Ui = (n, t) => [n[1] * t[2] - n[2] * t[1], n[2] * t[0] - n[0] * t[2], n[0] * t[1] - n[1] * t[0]]),
+    (Wn = (n) => Math.hypot(n[0], n[1], n[2])),
+    (Fi = (n) => {
+      let t = Wn(n);
+      return t > 1e-12 ? de(n, 1 / t) : [0, 0, 0];
+    }));
+  var Vc, Cg, A2, R2, C2, Sf, Ef, P2, ya, $n;
+  ((Vc = (n) => `8660${n}-6b7e-439a-bdd1-489a3213e9bb`),
+    (Cg = Vc("1001")),
+    (A2 = Vc("2101")),
+    (R2 = Vc("2102")),
+    (C2 = Vc("2003")),
+    (Sf = {
+      DR: [1, 0],
+      W3: [3, 1],
+      H4: [14, 1],
+      I5: [5, 2],
+      I6: [6, 2],
+      I7: [7, 2],
+      I8: [8, 2],
+      I9: [9, 2],
+      PW: [10, 2],
+      GW: [11, 2],
+      SW: [12, 2],
+      LW: [13, 2],
+      PT: [1, 3],
+    }));
+  ((Ef = 2.236936),
+    (P2 = { 1: "idle", 2: "starting", 3: "looking for the ball", 4: "ready", 5: "shot", 6: "done" }));
+  ya = (n, t, e, i) => (
+    i({ step: n }),
+    Promise.race([
+      t,
+      new Promise((s, r) =>
+        setTimeout(() => {
+          let a = new Error(`timeout: ${n}`);
+          ((a.name = "TimeoutError"), (a.step = n), r(a));
+        }, e),
+      ),
+    ])
+  );
+  $n = (n) => {
+    if (n == null) return null;
+    if (typeof n == "number") return n;
+    let t = /^\s*(-?[\d.]+)\s*([a-z%/]*)/i.exec(String(n));
+    if (!t) return null;
+    let e = parseFloat(t[1]),
+      i = t[2].toLowerCase();
+    return i === "mph" ? e / Ef : i === "kph" || i === "kmh" ? e / 3.6 : e;
+  };
+  var Dn = {
+    Driver: { launch: 12.6, spin: 2900, smash: 1.44, club: 94 },
+    "3 wood": { launch: 11.5, spin: 3800, smash: 1.42, club: 89 },
+    "4 hybrid": { launch: 13.5, spin: 4500, smash: 1.37, club: 84 },
+    "5 iron": { launch: 15, spin: 5300, smash: 1.32, club: 78 },
+    "6 iron": { launch: 16.5, spin: 5900, smash: 1.31, club: 76 },
+    "7 iron": { launch: 18, spin: 6600, smash: 1.3, club: 74 },
+    "8 iron": { launch: 20, spin: 7300, smash: 1.28, club: 72 },
+    "9 iron": { launch: 22.5, spin: 8e3, smash: 1.25, club: 70 },
+    PW: { launch: 25, spin: 8700, smash: 1.22, club: 68 },
+    "Gap wedge": { launch: 27.5, spin: 9200, smash: 1.2, club: 66 },
+    "Sand wedge": { launch: 30, spin: 9600, smash: 1.18, club: 64 },
+    "Lob wedge": { launch: 33, spin: 9900, smash: 1.15, club: 62 },
+    Putter: { launch: 1.5, spin: 0, smash: 1, club: 0 },
+  };
+  function JS({ tempC: n = 15, pressureHPa: t = 1013.25, humidity: e = 0.5 } = {}) {
+    let i = n + 273.15,
+      s = 6.1078 * Math.pow(10, (7.5 * n) / (n + 237.3)) * 100,
+      r = e * s,
+      o = (t * 100 - r) / (287.058 * i) + r / (461.495 * i),
+      l = (1458e-9 * Math.pow(i, 1.5)) / (i + 110.4);
+    return { rho: o, nu: l / o };
+  }
+  function e2(n, t) {
+    if (!n.windSpeed) return [0, 0, 0];
+    let e = 0.03,
+      i = Math.max(t, e * 1.01),
+      s = (n.windSpeed * Math.log(i / e)) / Math.log(10 / e);
+    return [Math.sin(n.windDir) * s, 0, Math.cos(n.windDir) * s];
+  }
+  function KS(n, t, e = cf) {
+    let i = e.cdHigh + e.cdSlope * -0.4;
+    return (
+      (n <= 35e3
+        ? e.cdLo
+        : n >= 6e4
+          ? e.cdHigh + e.cdSlope * ((n - 1e5) / 1e5)
+          : e.cdLo + ((n - 35e3) / 25e3) * (i - e.cdLo)) +
+      e.cdSpin * t
+    );
+  }
+  function jS(n, t = cf) {
+    return t.a * Math.pow(Math.max(n, 0), t.b);
+  }
+  function Pc(n, t, e) {
+    let i = [n[3], n[4], n[5]],
+      s = [n[6], n[7], n[8]],
+      r = ki(i, e2(t, n[1] - e)),
+      a = Wn(r),
+      o = Wn(s),
+      l = (a * 2 * we.r) / t.nu,
+      c = a > 1e-6 ? (o * we.r) / a : 0,
+      h = 0.5 * t.rho * J0 * a * a,
+      d = KS(l, c, t.aero),
+      u = jS(c, t.aero),
+      f = [0, -Ic, 0];
+    if (a > 1e-6) {
+      f = In(f, de(r, (-h * d) / (we.m * a)));
+      let x = Ui(s, r),
+        m = Wn(x);
+      m > 1e-9 && (f = In(f, de(x, (h * u) / (we.m * m))));
+    }
+    let g = o > 1e-9 ? (we.r * t.rho * J0 * t.aero.cm * c * a * a) / (we.k * we.m * we.r * we.r) / o : 0;
+    return [i[0], i[1], i[2], f[0], f[1], f[2], -g * s[0], -g * s[1], -g * s[2]];
+  }
+  function lf(n, t, e, i) {
+    let s = Pc(n, e, i),
+      r = n.map((d, u) => d + 0.5 * t * s[u]),
+      a = Pc(r, e, i),
+      o = n.map((d, u) => d + 0.5 * t * a[u]),
+      l = Pc(o, e, i),
+      c = n.map((d, u) => d + t * l[u]),
+      h = Pc(c, e, i);
+    return n.map((d, u) => d + (t / 6) * (s[u] + 2 * a[u] + 2 * l[u] + h[u]));
+  }
+  function i2(n, t, e, i) {
+    let s = Wn(n),
+      r = Fs(n, e),
+      a = ki(n, de(e, r)),
+      o = Fi(a),
+      l = ((i.crater * Math.PI) / 180) * Math.min(1, Math.abs(r) / 20),
+      c = Fi(ki(de(e, Math.cos(l)), de(o, Math.sin(l)))),
+      h = Fs(n, c);
+    if (h >= 0) return { v: n, w: t };
+    let d = i.e * Math.max(0.35, 1 - Math.abs(h) / 45),
+      u = we.m,
+      f = we.r,
+      g = we.k * u * f * f,
+      x = -u * (1 + d) * h,
+      m = de(c, -f),
+      p = In(n, Ui(t, m)),
+      v = ki(p, de(c, Fs(p, c))),
+      y = Wn(v) / (1 / u + (f * f) / g),
+      w = Math.min(i.mu * x, y),
+      b = ki(de(c, x), de(Fi(v), w)),
+      E = In(n, de(b, 1 / u)),
+      T = In(t, de(Ui(m, b), 1 / g));
+    return { v: E, w: T };
+  }
+  function n2(n, t, e) {
+    let [i, s] = n.grad(t, e);
+    return Fi([-i, 1, -s]);
+  }
+  function K0(n) {
+    let t = zi[n],
+      e = j0[n];
+    return !t || !e || n === "water"
+      ? t
+      : {
+          ...t,
+          e: t.e * e.e,
+          mu: t.mu * e.mu,
+          mk: t.mk * e.mu,
+          crater: t.crater * e.crater,
+          roll: t.roll * e.roll,
+        };
+  }
+  function QS(n) {
+    return (1.83 * 1.83) / (2 * n * 0.3048);
+  }
+  function t2(n) {
+    let t = n >>> 0;
+    return () => {
+      t = (t + 1831565813) >>> 0;
+      let e = t;
+      return (
+        (e = Math.imul(e ^ (e >>> 15), e | 1)),
+        (e ^= e + Math.imul(e ^ (e >>> 7), e | 61)),
+        ((e ^ (e >>> 14)) >>> 0) / 4294967296
+      );
+    };
+  }
+  function ks(n, t) {
+    let { course: e } = t,
+      i = { ...JS(t.weather), aero: cf, windSpeed: 0, windDir: 0, ...(t.env || {}) },
+      s = t.start.slice(),
+      r = t.aimYaw || 0,
+      a = [0, 1, 0],
+      o = [Math.sin(r), 0, Math.cos(r)],
+      l = Ui(o, a),
+      c = n.speedMph * 0.44704,
+      h = (n.vla * Math.PI) / 180,
+      d = (n.hla * Math.PI) / 180,
+      u = In(
+        In(de(o, c * Math.cos(h) * Math.cos(d)), de(l, c * Math.cos(h) * Math.sin(d))),
+        de(a, c * Math.sin(h)),
+      ),
+      f = Fi(u),
+      g = Fi(Ui(f, a)),
+      x = Fi(Ui(g, f)),
+      m = (n.axisDeg * Math.PI) / 180,
+      p = n.spinRpm * ZS,
+      v = ki(de(g, p * Math.cos(m)), de(x, p * Math.sin(m))),
+      _ = [],
+      y = { samples: _, result: "rest", carry: 0, total: 0, apex: 0, landAngle: 0, offline: 0, hang: 0 },
+      w = 0,
+      b = [s[0], e.height(s[0], s[2]) + we.r, s[2]],
+      E = () => _.push([w, b[0], b[1], b[2]]);
+    E();
+    let T = n.speedMph < 15 && n.vla < 6,
+      M = null,
+      S = T ? "roll" : "fly";
+    T &&
+      ((u = [u[0], 0, u[2]]),
+      (v = Ui(u, [0, 1, 0])
+        .map((V) => V / we.r)
+        .map((V) => -V)));
+    let C = t.dt || 0.001,
+      F = new Set(),
+      D = 0,
+      U = 0,
+      H = b[1];
+    for (let V = 0; V < 2e5; V++)
+      if (S === "fly") {
+        let z = e.height(b[0], b[2]),
+          Q = [...b, ...u, ...v],
+          K = lf(Q, C, i, z),
+          ht = C,
+          _t = e.height(K[0], K[2]);
+        if (K[1] - we.r <= _t && K[4] < 0) {
+          let yt = 0,
+            Z = C;
+          for (let It = 0; It < 24; It++) {
+            let Lt = 0.5 * (yt + Z),
+              Bt = lf(Q, Lt, i, z);
+            Bt[1] - we.r <= e.height(Bt[0], Bt[2]) ? (Z = Lt) : (yt = Lt);
+          }
+          ((ht = Z),
+            (K = lf(Q, ht, i, z)),
+            (b = [K[0], K[1], K[2]]),
+            (u = [K[3], K[4], K[5]]),
+            (v = [K[6], K[7], K[8]]),
+            (w += ht));
+          let rt = e.surface(b[0], b[2]);
+          if (
+            !M &&
+            ((M = b.slice()),
+            (y.hang = w),
+            (y.landAngle = (Math.atan2(-u[1], Math.hypot(u[0], u[2])) * 180) / Math.PI),
+            (y.landSpeed = Math.hypot(u[0], u[1], u[2])),
+            t.carryOnly)
+          ) {
+            E();
+            break;
+          }
+          if ((E(), rt === "water" || rt === "ob")) {
+            y.result = rt;
+            break;
+          }
+          let gt = n2(e, b[0], b[2]),
+            ct = i2(u, v, gt, K0(rt));
+          ((u = ct.v),
+            (v = ct.w),
+            U++,
+            (b[1] = e.height(b[0], b[2]) + we.r + 1e-4),
+            (Fs(u, gt) < 0.7 || U > 12) && ((u = ki(u, de(gt, Fs(u, gt)))), (S = "roll")));
+          continue;
+        }
+        if (
+          ((b = [K[0], K[1], K[2]]), (u = [K[3], K[4], K[5]]), (v = [K[6], K[7], K[8]]), (w += ht), e.treeHit)
+        ) {
+          let yt = e.treeHit(b[0], b[1], b[2]);
+          if (yt && !F.has(yt.id)) {
+            F.add(yt.id);
+            let Z = t2(yt.id * 7919 + Math.round(w * 1e3)),
+              rt = 0.12 + 0.3 * Z(),
+              gt = Wn(u) * rt,
+              ct = Fi([u[0] * rt + (Z() - 0.5) * 6, u[1] * rt - Z() * 4, u[2] * rt + (Z() - 0.5) * 6]);
+            ((u = de(ct, gt)), (v = de(v, 0.3)), (y.treeHits = (y.treeHits || 0) + 1));
+          }
+        }
+        if (((y.apex = Math.max(y.apex, b[1] - H)), (D += ht), D >= 0.01 && ((D = 0), E()), w > 30)) break;
+      } else {
+        let Q = e.surface(b[0], b[2]);
+        if (Q === "water" || Q === "ob") {
+          ((y.result = Q), E());
+          break;
+        }
+        let K = K0(Q),
+          [ht, _t] = e.grad(b[0], b[2]),
+          yt = Fi([-ht, 1, -_t]);
+        u = ki(u, de(yt, Fs(u, yt)));
+        let Z = de(yt, -we.r),
+          rt = In(u, Ui(v, Z)),
+          gt = Wn(rt),
+          ct = ki([0, -Ic, 0], de(yt, Fs([0, -Ic, 0], yt)));
+        if (gt > 0.05) {
+          let It = de(Fi(rt), -K.mk * Ic * we.m);
+          ((u = In(u, de(In(de(It, 1 / we.m), ct), 0.002))),
+            (v = In(v, de(Ui(Z, It), 0.002 / (we.k * we.m * we.r * we.r)))));
+        } else {
+          let It = Wn(u),
+            Lt = de(ct, 5 / 7);
+          (It > 1e-4 && (Lt = In(Lt, de(u, -K.roll / It))),
+            (u = In(u, de(Lt, 0.002))),
+            (v = de(Ui(yt, u), 1 / we.r)));
+          let Bt = (5 / 7) * Wn(ct);
+          Wn(u) < 0.02 && Bt < K.roll * 1.05 && (u = [0, 0, 0]);
+        }
+        let Mt = b.slice();
+        if (
+          ((b = In(b, de(u, 0.002))),
+          (b[1] = e.height(b[0], b[2]) + we.r),
+          (w += 0.002),
+          (D += 0.002),
+          D >= 0.02 && ((D = 0), E()),
+          e.pin && Q === "green")
+        ) {
+          let It = Math.hypot(b[0] - e.pin.x, b[2] - e.pin.z),
+            Lt = Math.hypot(Mt[0] - e.pin.x, Mt[2] - e.pin.z);
+          if (Math.min(It, Lt) < 0.054 && Wn(u) < 1.6) {
+            ((y.result = "holed"), (b = [e.pin.x, e.height(e.pin.x, e.pin.z) - 0.05, e.pin.z]), E());
+            break;
+          }
+        }
+        if (Wn(u) === 0 || w > 60) {
+          E();
+          break;
+        }
+      }
+    let O = (V) => Math.hypot(V[0] - s[0], V[2] - s[2]);
+    return (
+      (y.carry = O(M || b)),
+      (y.total = O(b)),
+      (y.offline = Fs(ki(b, s), l)),
+      (y.final = b),
+      (y.landing = M),
+      (y.lie = y.result === "rest" ? e.surface(b[0], b[2]) : y.result),
+      (y.duration = w),
+      y
+    );
+  }
+  function tg(n) {
+    let t = n.TotalSpin,
+      e = n.SpinAxis;
+    return (
+      t == null &&
+        n.BackSpin !== void 0 &&
+        ((t = Math.hypot(n.BackSpin, n.SideSpin || 0)),
+        (e = (Math.atan2(n.SideSpin || 0, n.BackSpin) * 180) / Math.PI)),
+      { speedMph: +n.Speed, vla: +n.VLA, hla: +n.HLA || 0, spinRpm: +t || 0, axisDeg: +e || 0 }
+    );
+  }
+  function Tf(n) {
+    if (!n) return "DR";
+    let t = {
+      Driver: "DR",
+      "3 wood": "W3",
+      "4 hybrid": "H4",
+      PW: "PW",
+      "Gap wedge": "GW",
+      "Sand wedge": "SW",
+      "Lob wedge": "LW",
+      Putter: "PT",
+    }[n];
+    if (t) return t;
+    let e = /^([5-9]) iron/.exec(n);
+    return e ? `I${e[1]}` : "DR";
+  }
+  function Pg(n, t) {
+    let e = {
+        speedMph: n.ballSpeedMps * Ef,
+        vla: n.vla,
+        hla: n.hla,
+        spinRpm: n.totalSpin,
+        axisDeg: n.spinAxis,
+      },
+      i = t
+        ? {
+            Speed: t.clubSpeedMps != null ? t.clubSpeedMps * Ef : void 0,
+            Path: t.path,
+            FaceToTarget: t.face,
+            AngleOfAttack: t.attack,
+            Loft: t.dynLoft,
+            HorizontalFaceImpact: t.impactHmm,
+            VerticalFaceImpact: t.impactVmm,
+            Smash: t.smash,
+          }
+        : null;
+    return { shot: e, club: i };
+  }
+  async function Ig({ onShot: n, onState: t, club: e = "DR", leftHanded: i = !1 }) {
+    if (!navigator.bluetooth) throw new Error("no-bluetooth");
+    let s = await ya(
+        "choosing the Omni",
+        navigator.bluetooth.requestDevice({
+          filters: [{ namePrefix: "SquareGolf" }, { namePrefix: "SGO" }],
+          optionalServices: [Cg],
+        }),
+        9e4,
+        t,
+      ),
+      r = await ya("connecting", s.gatt.connect(), 2e4, t),
+      a = await ya("finding the Omni service", r.getPrimaryService(Cg), 15e3, t),
+      o = await ya("opening commands", a.getCharacteristic(A2), 1e4, t),
+      l = await ya("opening shot data", a.getCharacteristic(R2), 1e4, t),
+      c = null;
+    try {
+      c = JSON.parse(new TextDecoder().decode(await (await a.getCharacteristic(C2)).readValue()));
+    } catch {}
+    let h = 0,
+      d = Promise.resolve(),
+      u = (b, ...E) =>
+        (d = d
+          .then(() => {
+            let T = new Uint8Array(9);
+            return (
+              (T[1] = b),
+              (T[2] = h++ & 255),
+              E.forEach((M, S) => (T[3 + S] = M)),
+              o.writeValueWithResponse ? o.writeValueWithResponse(T) : o.writeValue(T)
+            );
+          })
+          .catch(() => {})),
+      f = "",
+      g = 0,
+      x = null,
+      m = !1,
+      p = 0,
+      v = (b) => {
+        ((m = !1), clearTimeout(p), x && n(Pg(x, b)), (x = null));
+      };
+    (l.addEventListener("characteristicvaluechanged", (b) => {
+      let E = b.target.value;
+      if (E.byteLength === 0) {
+        s.gatt.disconnect();
+        return;
+      }
+      let T = new Uint8Array(E.buffer, E.byteOffset, E.byteLength),
+        M = T.join(","),
+        S = performance.now();
+      if (M === f && S - g < 1e3) return;
+      if (((f = M), (g = S), T[0] === 145)) {
+        t({ battery: T[1] });
+        return;
+      }
+      if (T[0] !== 17) return;
+      let C = (F) => E.getInt16(F, !0);
+      switch (T[1]) {
+        case 1:
+          t({ ready: T[3] === 1 || T[3] === 2, detected: T[4] === 1 });
+          break;
+        case 3:
+          t({ state: P2[T[3]] || "" });
+          break;
+        case 2: {
+          if (
+            ((x = {
+              ballSpeedMps: C(3) / 100,
+              vla: C(5) / 100,
+              hla: C(7) / 100,
+              totalSpin: C(9),
+              spinAxis: -C(11) / 100,
+              backSpin: C(13),
+              sideSpin: -C(15),
+            }),
+            x.totalSpin === 0 && e !== "PT")
+          ) {
+            ((x = null), t({ misread: !0 }));
+            break;
+          }
+          ((m = !0), u(135), (p = setTimeout(() => m && v(null), 1500)));
+          break;
+        }
+        case 7: {
+          if (!m) break;
+          let F = T[2],
+            D = (U) => {
+              let H = C(3 + 2 * U);
+              return (F >> U) & 1 && H !== -1 ? H / 100 : null;
+            };
+          v({
+            path: D(0),
+            face: D(1),
+            attack: D(2),
+            dynLoft: D(3),
+            impactHmm: D(4),
+            impactVmm: D(5),
+            clubSpeedMps: D(6),
+            smash: D(7),
+          });
+          break;
+        }
+      }
+    }),
+      await ya("subscribing to shots", l.startNotifications(), 1e4, t),
+      t({ step: "arming" }),
+      u(131));
+    let _ = (b, E = i) => {
+      if (!Sf[b]) return;
+      e = b;
+      let [T, M] = Sf[b];
+      return u(130, T, M, E ? 1 : 0);
+    };
+    (await _(e), await u(129, 1, 17));
+    let y = setInterval(() => u(131), 5e3),
+      w = !1;
+    return (
+      s.addEventListener("gattserverdisconnected", () => {
+        (clearInterval(y), w || t({ disconnected: !0 }));
+      }),
+      {
+        kind: "bluetooth",
+        name: s.name || "Omni",
+        firmware: c,
+        setClub: _,
+        disconnect: async () => {
+          ((w = !0), clearInterval(y), await u(129, 0, 17));
+          try {
+            s.gatt.disconnect();
+          } catch {}
+        },
+      }
+    );
+  }
+  function Lg(n, { onShot: t, onState: e }) {
+    let i = new WebSocket(n),
+      s = new Map(),
+      r = !1;
+    return (
+      (i.onopen = () => e({ ready: !0 })),
+      (i.onclose = () => {
+        r || e({ disconnected: !0 });
+      }),
+      (i.onerror = () => e({ error: !0 })),
+      (i.onmessage = ({ data: o }) => {
+        let l;
+        try {
+          l = JSON.parse(o);
+        } catch {
+          return;
+        }
+        let c = l.key && (l.key.shot_id ?? l.key.id);
+        if (c == null) return;
+        let h = s.get(c) || {};
+        if ((s.set(c, h), l.kind === "shot.launch")) h.launch = l.launch;
+        else if (l.kind === "shot.club") h.club = l.club;
+        else if (l.kind === "shot.finished" && h.launch) {
+          let d = h.launch,
+            u = h.club || {},
+            f = {
+              ballSpeedMps: $n(d.launch_speed),
+              vla: $n(d.launch_elevation),
+              hla: $n(d.launch_azimuth) || 0,
+              totalSpin: $n(d.total_spin_rpm) ?? Math.hypot($n(d.backspin_rpm) || 0, $n(d.sidespin_rpm) || 0),
+              spinAxis: $n(d.spin_axis) || 0,
+            };
+          (f.ballSpeedMps > 0 &&
+            t(
+              Pg(
+                f,
+                h.club
+                  ? {
+                      clubSpeedMps: $n(u.club_speed),
+                      path: $n(u.path),
+                      face: $n(u.face_angle),
+                      attack: $n(u.attack_angle),
+                      dynLoft: $n(u.dynamic_loft),
+                      smash: $n(u.smash_factor),
+                    }
+                  : null,
+              ),
+            ),
+            s.delete(c));
+        }
+        s.size > 20 && s.delete(s.keys().next().value);
+      }),
+      {
+        kind: "frp",
+        name: "flighthook",
+        setClub: (o) => {
+          i.readyState === 1 &&
+            Sf[o] &&
+            i.send(
+              JSON.stringify({ kind: "golfer.select", from: "omni-golf", ref: `sel-${Date.now()}`, club: o }),
+            );
+        },
+        disconnect: async () => {
+          ((r = !0), i.close());
+        },
+      }
+    );
+  }
+  return {
+    simulate: ks,
+    fromGSPro: tg,
+    connectOmni: Ig,
+    connectFRP: Lg,
+    clubCode: Tf,
+    OMNI_CLUBS: Sf,
+    CLUB_TYPICAL: Dn,
+    SURFACES: zi,
+    air: JS,
+  };
+})();
+</script>
+<script>
+"use strict";
+// ---------- constants ----------
+const KEY = "omniRangeLab:v1";
+const CLUBS = ["Driver", "3 wood", "4 hybrid", "5 iron", "6 iron", "7 iron", "8 iron", "9 iron", "PW", "Gap wedge", "Sand wedge", "Lob wedge"];
+const SHORT = { "Driver": "Driver", "3 wood": "3W", "4 hybrid": "4H", "5 iron": "5i", "6 iron": "6i", "7 iron": "7i", "8 iron": "8i", "9 iron": "9i", "PW": "PW", "Gap wedge": "GW", "Sand wedge": "SW", "Lob wedge": "LW" };
+const DIAG = "diag";
+const DIAG_OMNI_CLUB = "7 iron";           // what the Omni is told when no club is chosen
+const FLAT = { height: () => 0, surface: () => "fairway", grad: () => [0, 0], pin: null };
+const YD = 0.9144;
+const $ = id => document.getElementById(id);
+const esc = s => String(s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+const clubLabel = c => c === DIAG ? "Any club" : (SHORT[c] || c);
+const clubLong = c => c === DIAG ? "Any club (diagnostic)" : c;
+const omniClubFor = c => c === DIAG ? DIAG_OMNI_CLUB : c;
+
+// ---------- state ----------
+let S = null, storageOK = true;
+let conn = null, connStatus = { text: "Connect", cls: "" };
+let tab = "shot", allClubs = false, selId = null, anim = null, armedDelete = null;
+
+function freshPlayer(name) { return { id: uid(), name, hand: "R", bag: CLUBS.slice(), club: "7 iron" }; }
+function load() {
+  let d = null;
+  try { d = JSON.parse(localStorage.getItem(KEY) || "null"); } catch { storageOK = false; }
+  if (!d || !Array.isArray(d.players) || !d.players.length || !Array.isArray(d.shots)) {
+    const p = freshPlayer("Player 1");
+    d = { players: [p], current: p.id, shots: [] };
+  }
+  if (!d.players.some(p => p.id === d.current)) d.current = d.players[0].id;
+  S = d;
+}
+function save() {
+  try { localStorage.setItem(KEY, JSON.stringify(S)); }
+  catch { if (storageOK) toast("This browser won't save shots, so they'll go when the page closes"); storageOK = false; }
+}
+const me = () => S.players.find(p => p.id === S.current);
+const curClub = () => { const p = me(); return p.club === DIAG || p.bag.includes(p.club) ? p.club : (p.bag[0] || DIAG); };
+const shotsFor = (pid, club) => S.shots.filter(s => s.player === pid && (club === null || s.club === club));
+const viewShots = () => shotsFor(S.current, allClubs ? null : curClub());
+
+// ---------- physics (Omni Golf v4 engine) ----------
+const cache = new Map();
+function calc(shot) {
+  if (cache.has(shot.id)) return cache.get(shot.id);
+  let c = null;
+  try {
+    const r = OG.simulate(shot.ball, { course: FLAT, start: [0, 0, 0], aimYaw: 0 });
+    const land = r.landing || r.final;
+    c = { carry: r.carry / YD, total: r.total / YD, apex: r.apex / YD, side: -land[0] / YD, sideTotal: r.offline / YD,
+          descent: r.landAngle, hang: r.hang, samples: r.samples, duration: r.duration };
+  } catch (e) { console.error(e); }
+  cache.set(shot.id, c);
+  return c;
+}
+
+// ---------- formatting ----------
+const f1 = v => v == null || !isFinite(v) ? "–" : (Math.round(v * 10) / 10).toFixed(1);
+const f0 = v => v == null || !isFinite(v) ? "–" : String(Math.round(v));
+const lr = (v, d = 1) => v == null || !isFinite(v) ? "–" : Math.abs(v) < 0.05 ? "0.0" : `${Math.abs(v).toFixed(d)} ${v > 0 ? "R" : "L"}`;
+const time = ts => new Date(ts).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
+const dstat = (k, v, u) => v == null || !isFinite(v) ? stat(k, "–") : Math.abs(v) < 0.05 ? stat(k, "0.0", u) : stat(k, Math.abs(v).toFixed(1), `${u} ${v > 0 ? "R" : "L"}`);
+const stat = (k, n, u = "", big = false) => `<div class="stat${big ? " big" : ""}"><div class="k">${k}</div><div class="n">${n}<span class="u">${u}</span></div></div>`;
+const mean = a => a.length ? a.reduce((x, y) => x + y, 0) / a.length : null;
+const sd = a => { if (a.length < 2) return null; const m = mean(a); return Math.sqrt(a.reduce((x, y) => x + (y - m) ** 2, 0) / (a.length - 1)); };
+function diffLine(ours, app) {
+  if (app == null || !isFinite(app) || !ours) return "";
+  const d = ours - app, pc = 100 * d / app, a = Math.abs(pc);
+  const cls = a <= 2 ? "good" : a <= 5 ? "meh" : "bad";
+  const word = Math.abs(d) < 0.05 ? "the same as" : d > 0 ? "longer than" : "shorter than";
+  return `<span class="diff ${cls}">Ours is ${Math.abs(d).toFixed(1)} yd ${word} the app (${pc > 0 ? "+" : ""}${pc.toFixed(1)}%)</span>`;
+}
+
+let toastT = 0;
+function toast(msg, ms = 2600) { const t = $("toast"); t.textContent = msg; t.classList.add("show"); clearTimeout(toastT); toastT = setTimeout(() => t.classList.remove("show"), ms); }
+
+// ---------- HUD ----------
+function renderHUD() {
+  $("players").innerHTML = S.players.map(p => `<button class="chip${p.id === S.current ? " sel" : ""}" data-p="${p.id}">${esc(p.name)}${p.hand === "L" ? " (L)" : ""}</button>`).join("");
+  const p = me(), cur = curClub();
+  const bag = CLUBS.filter(c => p.bag.includes(c));
+  $("clubs").innerHTML = bag.map(c => `<button class="chip${c === cur ? " sel" : ""}" data-c="${esc(c)}" title="${esc(c)}">${clubLabel(c)}</button>`).join("")
+    + `<button class="chip diag${cur === DIAG ? " sel" : ""}" data-c="${DIAG}" title="Records against the diagnostic club. The Omni is told it's a 7 iron.">Any club</button>`;
+  const b = $("conn"); b.textContent = connStatus.text; b.className = connStatus.cls;
+}
+$("players").onclick = e => { const b = e.target.closest("[data-p]"); if (!b) return; switchPlayer(b.dataset.p); };
+$("clubs").onclick = e => { const b = e.target.closest("[data-c]"); if (!b) return; switchClub(b.dataset.c); };
+$("addPlayer").onclick = () => { const p = freshPlayer(`Player ${S.players.length + 1}`); S.players.push(p); save(); switchPlayer(p.id); showTab("player"); setTimeout(() => { const i = $("pName"); if (i) { i.focus(); i.select(); } }, 50); };
+
+function switchPlayer(id) { S.current = id; save(); selId = null; anim = null; tellOmni(); renderAll(); }
+function switchClub(c) { me().club = c; save(); selId = null; anim = null; tellOmni(); renderAll(); }
+function tellOmni() {
+  if (!conn || !conn.setClub) return;
+  const code = OG.clubCode(omniClubFor(curClub()));
+  try { const r = conn.setClub(code, me().hand === "L"); r && r.catch && r.catch(() => {}); } catch {}
+}
+
+// ---------- tabs ----------
+function showTab(t) {
+  tab = t;
+  for (const [k, b, p] of [["shot", "tShot", "pShot"], ["shots", "tShots", "pShots"], ["player", "tPlayer", "pPlayer"]]) {
+    $(b).classList.toggle("sel", k === t); $(p).classList.toggle("show", k === t);
+  }
+  renderPanel();
+}
+$("tShot").onclick = () => showTab("shot");
+$("tShots").onclick = () => showTab("shots");
+$("tPlayer").onclick = () => showTab("player");
+
+function selected() {
+  const list = viewShots();
+  let s = selId && list.find(x => x.id === selId);
+  return s || list[list.length - 1] || null;
+}
+
+// ---------- Shot tab ----------
+function renderShot() {
+  const p = me(), club = curClub(), s = selected();
+  const head = `<div class="head"><b>${esc(p.name)}</b> · ${esc(clubLong(allClubs ? (s ? s.club : club) : club))}</div>`;
+  if (!s) {
+    $("pShot").innerHTML = head + `<div class="empty">No shots yet with ${esc(clubLong(club))}. Connect the Omni and hit a ball, or try a test shot.</div>
+      <div class="row"><button class="go" id="bTest">Test shot</button></div>` + engineNote();
+    $("bTest").onclick = testShotSheet; return;
+  }
+  const c = calc(s), b = s.ball, cd = s.cd || {};
+  const n = viewShots().indexOf(s) + 1;
+  let h = head + `<div class="head" style="opacity:.7">Shot ${n} · ${time(s.ts)} · ${s.src === "manual" ? "test shot" : s.src === "frp" ? "flighthook" : "Omni"}${allClubs ? " · " + esc(clubLabel(s.club)) : ""}</div>`;
+  h += `<h3>Our ball flight</h3><div class="grid">${stat("Carry", f1(c && c.carry), "yd", true)}${stat("Total", f1(c && c.total), "yd", true)}${dstat("Offline", c && c.side, "yd")}${stat("Apex", f1(c && c.apex), "yd")}${stat("Descent", f1(c && c.descent), "°")}${stat("Hang time", f1(c && c.hang), "s")}</div><canvas id="side"></canvas>`;
+  h += `<h3>From the ${s.src === "manual" ? "test shot" : "launch monitor"}</h3><div class="grid">${stat("Ball speed", f1(b.speedMph), "mph")}${stat("Launch", f1(b.vla), "°")}${dstat("Direction", b.hla, "°")}${stat("Spin", f0(b.spinRpm), "rpm")}${dstat("Spin axis", b.axisDeg, "°")}${stat("Smash", cd.Smash != null ? cd.Smash.toFixed(2) : "–")}</div>`;
+  if (s.cd) {
+    h += `<h3>Club</h3><div class="grid">${stat("Club speed", f1(cd.Speed), "mph")}${dstat("Path", cd.Path, "°")}${dstat("Face", cd.FaceToTarget, "°")}${stat("Attack", f1(cd.AngleOfAttack), "°")}${stat("Dynamic loft", f1(cd.Loft), "°")}${stat("Impact", cd.HorizontalFaceImpact != null ? `${f0(cd.HorizontalFaceImpact)} / ${f0(cd.VerticalFaceImpact)}` : "–", "mm")}</div>`;
+  }
+  h += `<h3>Square app carry</h3><div class="row"><input type="number" id="appCarry" inputmode="decimal" step="0.1" placeholder="yd" value="${s.app != null ? s.app : ""}"><span id="appDiff">${diffLine(c && c.carry, s.app)}</span></div>`;
+  h += `<div class="row"><button class="go" id="bTest">Test shot</button><button id="bReplay">Replay</button><button class="danger" id="bDel">${armedDelete === s.id ? "Tap again to delete" : "Delete shot"}</button></div>`;
+  h += engineNote();
+  $("pShot").innerHTML = h;
+  if (armedDelete === s.id) $("bDel").classList.add("armed");
+  $("appCarry").oninput = e => {
+    const v = parseFloat(e.target.value); s.app = isFinite(v) && v > 0 ? v : null; save();
+    $("appDiff").innerHTML = diffLine(c && c.carry, s.app);
+  };
+  $("bTest").onclick = testShotSheet;
+  $("bReplay").onclick = () => startAnim(s);
+  $("bDel").onclick = () => {
+    if (armedDelete !== s.id) { armedDelete = s.id; renderShot(); setTimeout(() => { if (armedDelete === s.id) { armedDelete = null; renderShot(); } }, 3000); return; }
+    armedDelete = null; S.shots = S.shots.filter(x => x.id !== s.id); cache.delete(s.id); selId = null; anim = null; save(); renderAll();
+  };
+}
+function engineNote() {
+  return `<div class="note">Ball flight uses the Omni Golf v4 physics: still air, 15 °C, sea level, landing and rolling on fairway. Offline is where it lands; R is right of the target line.</div>`;
+}
+
+// ---------- Shots tab ----------
+function renderShots() {
+  const p = me(), club = curClub(), list = viewShots();
+  let h = `<div class="row"><div class="head" style="flex:1"><b>${esc(p.name)}</b> · ${allClubs ? "All clubs" : esc(clubLong(club))}</div><button id="bAll" class="${allClubs ? "sel" : ""}">All clubs</button></div>`;
+  if (!list.length) { $("pShots").innerHTML = h + `<div class="empty">No shots to show yet.</div>` + exportRow(); wireShots(); return; }
+  const cs = list.map(calc).filter(Boolean);
+  const carries = cs.map(c => c.carry), withApp = list.filter(s => s.app != null && calc(s));
+  h += `<div class="grid">${stat("Shots", list.length)}${stat("Avg carry", f1(mean(carries)), "yd", true)}${stat("Carry spread", sd(carries) != null ? "±" + f1(sd(carries)) : "–", "yd")}${stat("Avg total", f1(mean(cs.map(c => c.total))), "yd")}${dstat("Avg offline", mean(cs.map(c => c.side)), "yd")}${stat("Ours vs app", withApp.length ? signed(mean(withApp.map(s => calc(s).carry - s.app))) : "–", withApp.length ? "yd" : "")}</div>`;
+  h += `<h3>Shots</h3><table><thead><tr><th>#</th>${allClubs ? "<th>Club</th>" : ""}<th>Speed</th><th>Launch</th><th>Spin</th><th>Carry</th><th>Total</th><th>Offline</th><th>App</th><th>Δ</th></tr></thead><tbody>`;
+  const pick = selected();
+  list.forEach((s, i) => {
+    const c = calc(s) || {};
+    h += `<tr data-s="${s.id}" class="${pick && pick.id === s.id ? "pick" : ""}"><td>${i + 1}${s.src === "manual" ? "*" : ""}</td>${allClubs ? `<td>${esc(clubLabel(s.club))}</td>` : ""}<td>${f1(s.ball.speedMph)}</td><td>${f1(s.ball.vla)}</td><td>${f0(s.ball.spinRpm)}</td><td>${f1(c.carry)}</td><td>${f1(c.total)}</td><td>${lr(c.side)}</td><td>${s.app != null ? f1(s.app) : "–"}</td><td>${s.app != null && c.carry ? signed(c.carry - s.app) : "–"}</td></tr>`;
+  });
+  const bs = list.map(s => s.ball);
+  h += `<tr class="avg"><td>Avg</td>${allClubs ? "<td></td>" : ""}<td>${f1(mean(bs.map(b => b.speedMph)))}</td><td>${f1(mean(bs.map(b => b.vla)))}</td><td>${f0(mean(bs.map(b => b.spinRpm)))}</td><td>${f1(mean(carries))}</td><td>${f1(mean(cs.map(c => c.total)))}</td><td>${lr(mean(cs.map(c => c.side)))}</td><td>${withApp.length ? f1(mean(withApp.map(s => s.app))) : "–"}</td><td>${withApp.length ? signed(mean(withApp.map(s => calc(s).carry - s.app))) : "–"}</td></tr>`;
+  h += `</tbody></table><div class="note">* test shot. Tap a row to see it on the range. Δ is our carry minus the Square app's carry.</div>` + exportRow();
+  $("pShots").innerHTML = h; wireShots();
+}
+const signed = v => v == null || !isFinite(v) ? "–" : `${v > 0 ? "+" : ""}${v.toFixed(1)}`;
+const exportRow = () => `<div class="row"><button id="bCsv">Export all shots (CSV)</button></div>`;
+function wireShots() {
+  $("bAll").onclick = () => { allClubs = !allClubs; selId = null; anim = null; renderAll(); };
+  $("bCsv").onclick = exportCsv;
+  const tb = $("pShots").querySelector("tbody");
+  if (tb) tb.onclick = e => { const r = e.target.closest("tr[data-s]"); if (!r) return; selId = r.dataset.s; const s = S.shots.find(x => x.id === selId); renderPanel(); if (s) startAnim(s); };
+}
+
+// ---------- Player tab ----------
+function renderPlayer() {
+  const p = me();
+  let h = `<label class="f">Name<input type="text" id="pName" maxlength="24" value="${esc(p.name)}"></label>`;
+  h += `<h3>Plays</h3><div class="row"><button id="hR" class="${p.hand === "R" ? "sel" : ""}">Right-handed</button><button id="hL" class="${p.hand === "L" ? "sel" : ""}">Left-handed</button></div>`;
+  h += `<h3>Bag</h3><div class="row" id="bagRow">${CLUBS.map(c => `<button data-b="${esc(c)}" class="${p.bag.includes(c) ? "sel" : ""}" title="${esc(c)}">${clubLabel(c)}</button>`).join("")}</div>`;
+  h += `<div class="note">Tap a club to add it to or take it out of ${esc(p.name)}'s bag. "Any club" is always there for diagnostics. The Omni only knows these clubs, so the bag sticks to them.</div>`;
+  const n = shotsFor(p.id, null).length;
+  h += `<h3>Players</h3><div class="row"><button id="pAdd">Add a player</button>${S.players.length > 1 ? `<button class="danger${armedDelete === "p:" + p.id ? " armed" : ""}" id="pDel">${armedDelete === "p:" + p.id ? `Tap again: delete ${esc(p.name)} and ${n} shot${n === 1 ? "" : "s"}` : `Delete ${esc(p.name)}`}</button>` : ""}</div>`;
+  $("pPlayer").innerHTML = h;
+  $("pName").oninput = e => { p.name = e.target.value.trim() || "Player"; save(); renderHUD(); };
+  $("hR").onclick = () => { p.hand = "R"; save(); tellOmni(); renderAll(); };
+  $("hL").onclick = () => { p.hand = "L"; save(); tellOmni(); renderAll(); };
+  $("bagRow").onclick = e => {
+    const b = e.target.closest("[data-b]"); if (!b) return;
+    const c = b.dataset.b;
+    p.bag = p.bag.includes(c) ? p.bag.filter(x => x !== c) : CLUBS.filter(x => x === c || p.bag.includes(x));
+    save(); tellOmni(); renderAll();
+  };
+  $("pAdd").onclick = () => $("addPlayer").click();
+  const del = $("pDel");
+  if (del) del.onclick = () => {
+    const k = "p:" + p.id;
+    if (armedDelete !== k) { armedDelete = k; renderPlayer(); setTimeout(() => { if (armedDelete === k) { armedDelete = null; renderPlayer(); } }, 3500); return; }
+    armedDelete = null;
+    S.shots = S.shots.filter(s => s.player !== p.id);
+    S.players = S.players.filter(x => x.id !== p.id);
+    S.current = S.players[0].id; save(); tellOmni(); renderAll();
+  };
+}
+
+function renderPanel() { if (tab === "shot") renderShot(); else if (tab === "shots") renderShots(); else renderPlayer(); draw(); }
+function renderAll() { renderHUD(); renderPanel(); draw(); }
+
+// ---------- recording shots ----------
+function record(ball, cd, src) {
+  if (!ball || !(ball.speedMph > 0)) return;
+  const s = { id: uid(), ts: Date.now(), player: S.current, club: curClub(), src, ball: { speedMph: +ball.speedMph, vla: +ball.vla, hla: +ball.hla || 0, spinRpm: +ball.spinRpm || 0, axisDeg: +ball.axisDeg || 0 }, cd: cd || null, app: null };
+  S.shots.push(s); save();
+  selId = s.id;
+  if (tab === "player") { tab = "shot"; showTab("shot"); }
+  renderAll(); startAnim(s);
+  const c = calc(s);
+  if (src !== "manual") toast(`${me().name} · ${clubLabel(s.club)} · ${c ? f1(c.carry) + " yd carry" : "recorded"}`);
+}
+
+// ---------- test shot sheet ----------
+function testShotSheet() {
+  const club = omniClubFor(curClub()), t = OG.CLUB_TYPICAL[club] || OG.CLUB_TYPICAL["7 iron"];
+  const last = selected();
+  const v = last ? last.ball : { speedMph: +(t.club * t.smash).toFixed(1), vla: t.launch, hla: 0, spinRpm: t.spin, axisDeg: 0 };
+  openSheet(`<h2>Test shot</h2><div class="note" style="margin-top:0">Type in launch numbers to fly a ball without the Omni. It's recorded against ${esc(me().name)} and ${esc(clubLong(curClub()))}, marked as a test shot.</div>
+    <div class="fields">
+      <label class="f">Ball speed (mph)<input type="number" id="mSp" step="0.1" value="${v.speedMph}"></label>
+      <label class="f">Launch angle (°)<input type="number" id="mVla" step="0.1" value="${v.vla}"></label>
+      <label class="f">Direction (° +R)<input type="number" id="mHla" step="0.1" value="${v.hla}"></label>
+      <label class="f">Spin (rpm)<input type="number" id="mSpin" step="10" value="${Math.round(v.spinRpm)}"></label>
+      <label class="f">Spin axis (° +R)<input type="number" id="mAx" step="0.1" value="${v.axisDeg}"></label>
+    </div>
+    <div class="row"><button id="mTyp">Typical ${esc(SHORT[club] || club)}</button><span style="flex:1"></span><button id="mCancel">Cancel</button><button class="go" id="mHit">Hit it</button></div>`);
+  $("mTyp").onclick = () => { $("mSp").value = (t.club * t.smash).toFixed(1); $("mVla").value = t.launch; $("mHla").value = 0; $("mSpin").value = t.spin; $("mAx").value = 0; };
+  $("mCancel").onclick = closeSheet;
+  $("mHit").onclick = () => {
+    const ball = { speedMph: parseFloat($("mSp").value), vla: parseFloat($("mVla").value), hla: parseFloat($("mHla").value) || 0, spinRpm: parseFloat($("mSpin").value) || 0, axisDeg: parseFloat($("mAx").value) || 0 };
+    if (!(ball.speedMph > 0 && ball.speedMph < 250) || !isFinite(ball.vla)) { toast("Ball speed and launch angle are needed"); return; }
+    closeSheet(); record(ball, null, "manual");
+  };
+}
+function openSheet(html) { $("sheet").innerHTML = html; $("dlg").classList.add("show"); }
+function closeSheet() { $("dlg").classList.remove("show"); }
+$("dlg").onclick = e => { if (e.target === $("dlg")) closeSheet(); };
+
+// ---------- connecting ----------
+const STEP = { "choosing the Omni": "Pick the Omni…", "connecting": "Connecting…", "finding the Omni service": "Connecting…", "opening commands": "Connecting…", "opening shot data": "Connecting…", "subscribing to shots": "Connecting…", "arming": "Arming…" };
+let battery = null, detected = false;
+function setConn(text, cls) { connStatus = { text, cls }; renderHUD(); }
+function onState(st) {
+  if (st.step) setConn(STEP[st.step] || "Connecting…", "busy");
+  if (st.battery != null) battery = st.battery;
+  if (st.ready != null) { detected = !!st.detected; setConn(`${conn && conn.kind === "frp" ? "flighthook" : "Omni"}: ${st.ready ? (detected ? "ball ready" : "place a ball") : "waiting"}${battery != null && conn && conn.kind !== "frp" ? ` · ${battery}%` : ""}`, "ok"); }
+  if (st.state && conn) setConn(`Omni: ${st.state}${battery != null ? ` · ${battery}%` : ""}`, "ok");
+  if (st.misread) toast("The Omni misread that one. Hit another.");
+  if (st.error) toast("Couldn't reach flighthook at that address");
+  if (st.disconnected) { conn = null; setConn("Disconnected · reconnect", ""); toast("Launch monitor disconnected"); }
+}
+const onShot = ({ shot, club }) => record(shot, club, conn && conn.kind === "frp" ? "frp" : "omni");
+
+$("conn").onclick = () => {
+  const bt = !!navigator.bluetooth;
+  const saved = (() => { try { return localStorage.getItem("omniRangeLab:frp") || ""; } catch { return ""; } })();
+  openSheet(`<h2>Launch monitor</h2>
+    ${conn ? `<div class="row"><span style="flex:1">Connected to ${esc(conn.kind === "frp" ? "flighthook" : conn.name || "the Omni")}.</span><button class="danger" id="cOff">Disconnect</button></div>` : ""}
+    <h3>Square Omni over Bluetooth</h3>
+    <div class="row"><button class="go" id="cBt" ${bt ? "" : "disabled"}>Connect the Omni</button></div>
+    <div class="note" style="margin-top:4px">${bt ? "Turn the Omni on and close the Square app first, as only one app can hold the Bluetooth link." : "This browser has no Bluetooth for web pages. Safari on iPad and iPhone doesn't, so use Chrome or Edge on a computer or Android, or flighthook below."}</div>
+    <h3>flighthook</h3>
+    <div class="row"><input type="text" id="cAddr" placeholder="192.168.1.20" value="${esc(saved)}" style="flex:1;width:auto"><button id="cFrp">Connect</button></div>
+    <div class="note" style="margin-top:4px">${location.protocol === "https:" ? "Browsers block this kind of link from a secure (https) page unless the address starts with wss://." : "Enter the computer's address, or a full ws:// address."}</div>
+    <div class="row" style="justify-content:flex-end"><button id="cClose">Close</button></div>`);
+  $("cClose").onclick = closeSheet;
+  if ($("cOff")) $("cOff").onclick = async () => { const c = conn; conn = null; closeSheet(); setConn("Connect", ""); try { await c.disconnect(); } catch {} };
+  $("cBt").onclick = async () => {
+    closeSheet();
+    if (conn) { try { await conn.disconnect(); } catch {} conn = null; }
+    try {
+      setConn("Pick the Omni…", "busy");
+      conn = await OG.connectOmni({ onShot, onState, club: OG.clubCode(omniClubFor(curClub())), leftHanded: me().hand === "L" });
+      if (!connStatus.cls || connStatus.cls === "busy") setConn(`${conn.name || "Omni"}: connected${battery != null ? ` · ${battery}%` : ""}`, "ok");
+      toast("Omni connected. Hit away.");
+    } catch (e) {
+      conn = null; setConn("Connect", "");
+      const m = String(e && (e.name || "") + " " + (e.message || ""));
+      if (/NotFoundError|cancel/i.test(m)) toast("No Omni picked");
+      else if (/SecurityError|NotAllowed|permission|policy/i.test(m)) toast("Bluetooth isn't allowed on this page. Open the Range Lab on your GitHub site instead.", 5000);
+      else if (/timeout/i.test(m)) toast(`The Omni didn't answer (${e.step || "timeout"}). Is it on and free of the Square app?`, 5000);
+      else toast("Couldn't connect to the Omni", 4000);
+    }
+  };
+  $("cFrp").onclick = async () => {
+    const raw = $("cAddr").value.trim(); if (!raw) return;
+    try { localStorage.setItem("omniRangeLab:frp", raw); } catch {}
+    const url = /^wss?:/.test(raw) ? raw : `ws://${raw}:5880/frp`;
+    closeSheet();
+    if (conn) { try { await conn.disconnect(); } catch {} conn = null; }
+    try { setConn("Connecting…", "busy"); conn = OG.connectFRP(url, { onShot, onState }); tellOmni(); }
+    catch { conn = null; setConn("Connect", ""); toast("Couldn't open that address. From an https page it needs wss://", 4500); }
+  };
+};
+
+// ---------- CSV ----------
+function exportCsv() {
+  const cols = ["time", "player", "club", "source", "ball_speed_mph", "launch_deg", "direction_deg", "spin_rpm", "spin_axis_deg", "club_speed_mph", "path_deg", "face_deg", "attack_deg", "dynamic_loft_deg", "impact_h_mm", "impact_v_mm", "smash", "carry_yd", "total_yd", "apex_yd", "offline_yd", "descent_deg", "hang_s", "app_carry_yd", "ours_minus_app_yd"];
+  const name = id => (S.players.find(p => p.id === id) || {}).name || "";
+  const q = v => v == null || (typeof v === "number" && !isFinite(v)) ? "" : typeof v === "number" ? String(Math.round(v * 100) / 100) : /[",\n]/.test(v) ? `"${String(v).replace(/"/g, '""')}"` : String(v);
+  const rows = S.shots.map(s => { const c = calc(s) || {}, b = s.ball, d = s.cd || {};
+    return [new Date(s.ts).toISOString(), name(s.player), clubLong(s.club), s.src, b.speedMph, b.vla, b.hla, b.spinRpm, b.axisDeg, d.Speed, d.Path, d.FaceToTarget, d.AngleOfAttack, d.Loft, d.HorizontalFaceImpact, d.VerticalFaceImpact, d.Smash, c.carry, c.total, c.apex, c.side, c.descent, c.hang, s.app, s.app != null && c.carry ? c.carry - s.app : null].map(q).join(","); });
+  download(`range-lab-${new Date().toISOString().slice(0, 10)}.csv`, [cols.join(","), ...rows].join("\n") + "\n", "text/csv");
+}
+function download(filename, data, type) {
+  const fallback = () => { const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([data], { type })); a.download = filename; document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000); };
+  const cl = window.claude;
+  if (!cl || typeof cl.use !== "function") { fallback(); return; }
+  cl.use("downloads").then(d => d ? d.save({ filename, data }) : fallback()).catch(() => toast("Not saved"));
+}
+
+// ---------- drawing the range ----------
+const cv = $("c"), ctx = cv.getContext("2d");
+function resize() { const d = Math.min(2, window.devicePixelRatio || 1); cv.width = Math.round(innerWidth * d); cv.height = Math.round(innerHeight * d); ctx.setTransform(d, 0, 0, d, 0, 0); draw(); }
+addEventListener("resize", resize);
+function viewRect() {
+  const W = innerWidth, H = innerHeight, hud = $("hud").getBoundingClientRect(), p = $("panel").getBoundingClientRect();
+  const r = { x: 0, y: hud.bottom + 4, w: W, h: H - hud.bottom - 4 };
+  if (p.left > W * 0.45 && p.top < H * 0.3) r.w = p.left - 10; else r.h = p.top - 8 - r.y;
+  r.h = Math.max(140, r.h);
+  return r;
+}
+function startAnim(s) { const c = calc(s); if (!c) return; selId = s.id; anim = { id: s.id, t0: performance.now(), dur: c.duration }; requestAnimationFrame(tick); }
+function tick() { draw(); if (anim && (performance.now() - anim.t0) / 1000 < anim.dur + 0.3) requestAnimationFrame(tick); else { anim = null; draw(); } }
+
+function draw() {
+  if (!S) return;
+  const W = innerWidth, H = innerHeight, r = viewRect();
+  const list = viewShots().slice(-80), pick = selected(), pc = pick && calc(pick);
+  const cs = list.map(s => [s, calc(s)]).filter(x => x[1]);
+  const far = Math.max(140, ...cs.map(([, c]) => Math.max(c.total, c.carry) * 1.08));
+  const L = Math.min(400, Math.ceil(far / 50) * 50);
+  const teeY = r.y + r.h - 30, s = (r.h - 30 - 26) / L, cx = r.x + r.w / 2;
+  const X = side => cx + side * s, Y = d => teeY - d * s;
+
+  // turf with mowing stripes
+  ctx.fillStyle = "#3f6d2f"; ctx.fillRect(0, 0, W, H);
+  for (let d = 0, i = 0; d < L + 60; d += 12.5, i++) { ctx.fillStyle = i % 2 ? "#467735" : "#3d6a2d"; ctx.fillRect(0, Y(d + 12.5), W, 12.5 * s + 1); }
+  // target greens
+  const targets = [[50, -12], [100, 14], [150, -6], [200, 16], [250, -10], [300, 8], [350, 0]];
+  for (const [d, off] of targets) {
+    if (d > L) continue;
+    const gx = X(off), gy = Y(d), rad = (5 + d / 50) * s;
+    ctx.fillStyle = "#5c9c43"; ctx.beginPath(); ctx.ellipse(gx, gy, rad, rad * 0.8, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = "rgba(255,255,255,.18)"; ctx.lineWidth = 1; ctx.stroke();
+    ctx.strokeStyle = "#f8fafc"; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.moveTo(gx, gy); ctx.lineTo(gx, gy - 16); ctx.stroke();
+    ctx.fillStyle = d % 100 ? "#facc15" : "#ef4444"; ctx.beginPath(); ctx.moveTo(gx, gy - 16); ctx.lineTo(gx + 9, gy - 13); ctx.lineTo(gx, gy - 10); ctx.fill();
+  }
+  // yardage lines
+  ctx.font = "600 11px -apple-system, system-ui, sans-serif"; ctx.textBaseline = "middle";
+  for (let d = 25; d <= L; d += 25) {
+    const y = Y(d), major = d % 50 === 0;
+    ctx.strokeStyle = major ? "rgba(255,255,255,.28)" : "rgba(255,255,255,.1)"; ctx.lineWidth = 1;
+    ctx.setLineDash(major ? [] : [4, 6]); ctx.beginPath(); ctx.moveTo(r.x, y); ctx.lineTo(r.x + r.w, y); ctx.stroke(); ctx.setLineDash([]);
+    if (major) { ctx.fillStyle = "rgba(255,255,255,.75)"; ctx.textAlign = "left"; ctx.fillText(`${d} yd`, r.x + 8, y - 8); ctx.textAlign = "right"; ctx.fillText(`${d}`, r.x + r.w - 8, y - 8); }
+  }
+  // target line and tee mat
+  ctx.strokeStyle = "rgba(255,255,255,.35)"; ctx.setLineDash([6, 8]); ctx.beginPath(); ctx.moveTo(cx, teeY); ctx.lineTo(cx, Y(L)); ctx.stroke(); ctx.setLineDash([]);
+  ctx.fillStyle = "#1f3b19"; ctx.fillRect(cx - 22, teeY - 6, 44, 18); ctx.fillStyle = "#e5e7eb"; ctx.beginPath(); ctx.arc(cx, teeY + 3, 3, 0, Math.PI * 2); ctx.fill();
+
+  // dispersion: mean landing and 1-sd ellipse
+  if (cs.length >= 3) {
+    const ms = mean(cs.map(([, c]) => c.side)), mc = mean(cs.map(([, c]) => c.carry));
+    const ss = sd(cs.map(([, c]) => c.side)), sc = sd(cs.map(([, c]) => c.carry));
+    ctx.fillStyle = "rgba(134,239,172,.12)"; ctx.strokeStyle = "rgba(134,239,172,.55)"; ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.ellipse(X(ms), Y(mc), Math.max(3, ss * s), Math.max(3, sc * s), 0, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(X(ms) - 7, Y(mc)); ctx.lineTo(X(ms) + 7, Y(mc)); ctx.moveTo(X(ms), Y(mc) - 7); ctx.lineTo(X(ms), Y(mc) + 7); ctx.stroke();
+  }
+  // all landing spots
+  for (const [sh, c] of cs) {
+    if (pick && sh.id === pick.id) continue;
+    ctx.fillStyle = sh.src === "manual" ? "rgba(253,224,71,.55)" : "rgba(255,255,255,.6)";
+    ctx.beginPath(); ctx.arc(X(c.side), Y(c.carry), 3.2, 0, Math.PI * 2); ctx.fill();
+  }
+  // selected shot: flight path, roll and ball
+  if (pick && pc) {
+    const smp = pc.samples, now = anim && anim.id === pick.id ? (performance.now() - anim.t0) / 1000 : Infinity;
+    const pt = q => [X(-q[1] / YD), Y(q[3] / YD)];
+    const land = smp.findIndex(q => q[0] >= pc.hang - 1e-9);
+    ctx.lineWidth = 2.5; ctx.lineCap = "round"; ctx.lineJoin = "round";
+    ctx.strokeStyle = "rgba(255,255,255,.95)"; ctx.beginPath();
+    let last = null, i = 0;
+    for (; i < smp.length && smp[i][0] <= now; i++) {
+      const [x, y] = pt(smp[i]);
+      if (land >= 0 && i === land + 1) { ctx.stroke(); ctx.strokeStyle = "rgba(255,255,255,.55)"; ctx.setLineDash([3, 5]); ctx.beginPath(); ctx.moveTo(last[0], last[1]); }
+      i ? ctx.lineTo(x, y) : ctx.moveTo(x, y); last = [x, y];
+    }
+    ctx.stroke(); ctx.setLineDash([]);
+    if (now >= pc.hang) {
+      ctx.fillStyle = "#86efac"; ctx.strokeStyle = "#052e16"; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.arc(X(pc.side), Y(pc.carry), 6, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+      label(`${f1(pc.carry)} carry`, X(pc.side) + 10, Y(pc.carry));
+    }
+    if (last) { ctx.fillStyle = "#fff"; ctx.beginPath(); ctx.arc(last[0], last[1], 4, 0, Math.PI * 2); ctx.fill(); }
+    if (now >= pc.duration) label(`${f1(pc.total)} total`, X(pc.sideTotal) + 10, Y(pc.total) - 2, true);
+    sideView(pc, now);
+  }
+  if (!cs.length) {
+    ctx.fillStyle = "rgba(255,255,255,.8)"; ctx.font = "600 14px -apple-system, system-ui, sans-serif"; ctx.textAlign = "center";
+    ctx.fillText(`${me().name} · ${clubLong(curClub())}: no shots yet`, cx, Y(L * 0.55));
+  }
+}
+function label(t, x, y, dim) {
+  ctx.font = "700 12px -apple-system, system-ui, sans-serif"; ctx.textAlign = "left"; ctx.textBaseline = "middle";
+  const w = ctx.measureText(t).width + 10;
+  ctx.fillStyle = dim ? "rgba(0,0,0,.45)" : "rgba(0,0,0,.6)"; roundRect(x, y - 10, w, 20, 6); ctx.fill();
+  ctx.fillStyle = dim ? "rgba(255,255,255,.85)" : "#bbf7d0"; ctx.fillText(t, x + 5, y);
+}
+function roundRect(x, y, w, h, rr) { ctx.beginPath(); ctx.moveTo(x + rr, y); ctx.arcTo(x + w, y, x + w, y + h, rr); ctx.arcTo(x + w, y + h, x, y + h, rr); ctx.arcTo(x, y + h, x, y, rr); ctx.arcTo(x, y, x + w, y, rr); ctx.closePath(); }
+function sideView(c, now) {
+  const el = $("side"); if (!el) return;
+  const d = Math.min(2, window.devicePixelRatio || 1), w = el.clientWidth, h = el.clientHeight;
+  if (!w || !h) return;
+  if (el.width !== Math.round(w * d) || el.height !== Math.round(h * d)) { el.width = Math.round(w * d); el.height = Math.round(h * d); }
+  const g = el.getContext("2d"); g.setTransform(d, 0, 0, d, 0, 0); g.clearRect(0, 0, w, h);
+  const maxD = Math.max(50, c.total * 1.04), maxH = Math.max(15, c.apex * 1.3), L = 10, R = 10, B = 20, T = 22;
+  const gx = q => L + (q / maxD) * (w - L - R), gy = q => h - B - (q / maxH) * (h - B - T);
+  g.strokeStyle = "rgba(255,255,255,.3)"; g.lineWidth = 1; g.beginPath(); g.moveTo(L, gy(0)); g.lineTo(w - R, gy(0)); g.stroke();
+  g.strokeStyle = "#fff"; g.lineWidth = 2; g.lineJoin = "round"; g.beginPath();
+  let started = false, last = null;
+  for (const q of c.samples) { if (q[0] > now) break; const x = gx(Math.hypot(q[1], q[3]) / YD), y = gy(Math.max(0, q[2] - 0.021335) / YD); started ? g.lineTo(x, y) : g.moveTo(x, y); started = true; last = [x, y]; }
+  g.stroke();
+  if (last) { g.fillStyle = "#bbf7d0"; g.beginPath(); g.arc(last[0], last[1], 3, 0, Math.PI * 2); g.fill(); }
+  g.font = "600 11px -apple-system, system-ui, sans-serif"; g.fillStyle = "rgba(255,255,255,.75)"; g.textBaseline = "top"; g.textAlign = "left";
+  g.fillText(`Side view · apex ${f1(c.apex)} yd · descent ${f1(c.descent)}°`, L, 6);
+  g.textBaseline = "alphabetic"; g.fillStyle = "rgba(255,255,255,.55)"; g.fillText("0", L, h - 5); g.textAlign = "right"; g.fillText(`${Math.round(maxD)} yd`, w - R, h - 5);
+}
+
+// ---------- start ----------
+load();
+renderAll();
+resize();
+window.rangeLab = { get state() { return S; }, record, calc };
+</script>
+</body>
+</html>
