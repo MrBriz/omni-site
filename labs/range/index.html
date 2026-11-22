@@ -1000,10 +1000,12 @@ const OG = (() => {
 //                        path, face, attack, dynamic loft, impact H (mm), impact V (mm), club speed (m/s), smash
 //   out [0, cmd, seq, args..]  129 start/stop detection, 130 set club, 131 arm / keep-alive,
 //                              135 ask for club data
+// Packets can also arrive from the Omni relay (source "relay"): the same bytes, copied from the
+// link between the real Omni and the Square app, so "out" packets there were sent by the Square app.
 // ---------------------------------------------------------------------------------------------
 const RawTap = (() => {
   const subs = new Set();
-  const emit = e => { e.ts = Date.now(); for (const f of subs) try { f(e); } catch (err) { console.error(err); } };
+  const emit = e => { e.ts = e.ts || Date.now(); for (const f of subs) try { f(e); } catch (err) { console.error(err); } };
   const bytesOf = d => d instanceof ArrayBuffer ? new Uint8Array(d.slice(0)) : ArrayBuffer.isView(d) ? new Uint8Array(d.buffer.slice(d.byteOffset, d.byteOffset + d.byteLength)) : new Uint8Array(0);
 
   const C = window.BluetoothRemoteGATTCharacteristic;
@@ -1082,9 +1084,9 @@ const RawTap = (() => {
     const kind = o.kind || "message";
     return { kind, summary: `${e.direction === "out" ? "Sent" : "Received"} ${kind}`, fields: o };
   }
-  function decode(e) { return e.source === "omni" ? decodeOmni(e) : decodeFrp(e); }
+  function decode(e) { return e.source === "omni" || e.source === "relay" ? decodeOmni(e) : decodeFrp(e); }
 
-  return { on: f => subs.add(f), off: f => subs.delete(f), emit, decode, hex, bytesOf };
+  return { on: f => subs.add(f), off: f => subs.delete(f), emit, decode, hex, bytesOf, NativeWebSocket: WS };
 })();
 
 // Practice bands: typical full-swing launch numbers for a level of golfer, per club.
@@ -1485,7 +1487,7 @@ const mean = a => a.length ? a.reduce((x, y) => x + y, 0) / a.length : null;
 const sd = a => { if (a.length < 2) return null; const m = mean(a); return Math.sqrt(a.reduce((x, y) => x + (y - m) ** 2, 0) / (a.length - 1)); };
 const tile = (cls, k, n, u = "", sm = false) => `<div class="tile ${cls}"><div class="k">${k}</div><div class="n${sm ? " sm" : ""}">${n}<span class="u">${u}</span></div></div>`;
 const dtile = (cls, k, v, u) => v == null || !isFinite(v) ? tile(cls, k, "–") : Math.abs(v) < 0.05 ? tile(cls, k, "0.0", u) : tile(cls, k, Math.abs(v).toFixed(1), `${u} ${v > 0 ? "R" : "L"}`);
-const srcBadge = s => s.src === "manual" ? `<span class="badge test">Typed in · test shot</span>` : `<span class="badge meas">Measured by ${s.src === "frp" ? "flighthook" : "the Omni"}</span>`;
+const srcBadge = s => s.src === "manual" ? `<span class="badge test">Typed in · test shot</span>` : `<span class="badge meas">Measured by ${s.src === "frp" ? "flighthook" : s.src === "relay" ? "the Omni · via relay" : "the Omni"}</span>`;
 function diffLine(ours, app) {
   if (app == null || !isFinite(app) || !ours) return "";
   const d = ours - app, pc = 100 * d / app, a = Math.abs(pc), cls = a <= 2 ? "good" : a <= 5 ? "meh" : "bad";
@@ -1509,11 +1511,12 @@ function renderLive() {
   let h = "";
   if (s) {
     const b = s.ball, c = calc(s);
-    h += `<span class="badge ${s.src === "manual" ? "test" : "meas"}">${s.src === "manual" ? "Test shot" : s.src === "frp" ? "flighthook" : "Omni"}</span>`;
+    h += `<span class="badge ${s.src === "manual" ? "test" : "meas"}">${s.src === "manual" ? "Test shot" : s.src === "frp" ? "flighthook" : s.src === "relay" ? "Omni · relay" : "Omni"}</span>`;
     h += [["Ball", f1(b.speedMph), " mph"], ["Launch", f1(b.vla), "°"], ["Direction", lr(b.hla, "°"), ""], ["Spin", f0(b.spinRpm), " rpm"], ["Axis", lr(b.axisDeg, "°"), ""]]
       .map(([k, v, u]) => `<span class="lv"><span class="lk">${k}</span><span><b>${v}</b>${u}</span></span>`).join("");
     if (c) h += `<span class="lv calcv"><span class="lk">Carry</span>≈ ${f1(c.carry)} yd</span>`;
   } else h += `<span class="muted">Waiting for a shot. The Omni's measured numbers appear here first.</span>`;
+  if (conn && conn.kind === "relay" && squareClub) h += `<span class="lv calcv"><span class="lk">Square app</span>${esc(squareClub)}</span>`;
   if (pr && pr.sol) h += `<span class="lv tgt"><span class="lk">Target ${f0(pr.yd)} yd</span>${pr.sol.ok ? `${f1(pr.sol.shot.speedMph)} mph · ${f1(pr.sol.shot.vla)}° · ${f0(pr.sol.shot.spinRpm)} rpm` : "out of range"}</span>`;
   el.innerHTML = h;
 }
@@ -1674,7 +1677,7 @@ const DIR = { in: "←", out: "→", read: "←" };
 function rawRow(r) {
   const d = r.decoded || {}, shot = r.shotId ? S.shots.find(s => s.id === r.shotId) : null;
   const n = shot ? shotsFor(shot.player, shot.club).indexOf(shot) + 1 : 0;
-  return `<div class="raw ${r.direction}"><div class="rh"><span class="rt">${time(r.ts, true)}.${String(r.ts % 1000).padStart(3, "0")}</span><span class="rd">${DIR[r.direction] || ""} ${r.source === "omni" ? "Omni" : "flighthook"}${r.direction === "read" ? " (read)" : ""}</span><span class="rk">${esc(r.kind || "")}</span>${shot ? `<span class="rs">${esc(clubLabel(shot.club))} shot ${n}</span>` : ""}</div>
+  return `<div class="raw ${r.direction}"><div class="rh"><span class="rt">${time(r.ts, true)}.${String(r.ts % 1000).padStart(3, "0")}</span><span class="rd">${r.source === "relay" ? (r.direction === "out" ? "Square app → Omni" : r.direction === "read" ? "Square app read" : "Omni → Square app") : `${DIR[r.direction] || ""} ${r.source === "omni" ? "Omni" : "flighthook"}${r.direction === "read" ? " (read)" : ""}`}</span><span class="rk">${esc(r.kind || "")}</span>${shot ? `<span class="rs">${esc(clubLabel(shot.club))} shot ${n}</span>` : ""}</div>
     <div class="rx">${esc(r.hex || r.text || "")}</div>${d.summary ? `<div class="rm">${esc(d.summary)}</div>` : ""}</div>`;
 }
 let rawTimer = 0;
@@ -1682,7 +1685,7 @@ function scheduleRaw() { clearTimeout(rawTimer); rawTimer = setTimeout(() => { i
 async function renderRaw() {
   const el = $("pRaw");
   const head = `<div class="sec-h"><span class="badge meas">Raw data</span><span class="sec-note">every packet to and from the launch monitor, as sent</span></div>
-    <div class="note" style="margin-top:2px">${conn ? `Connected to ${esc(conn.kind === "frp" ? "flighthook" : conn.name || "the Omni")}${battery != null && conn.kind !== "frp" ? ` · battery ${battery}%` : ""}${conn.firmware ? ` · device info: ${esc(JSON.stringify(conn.firmware)).slice(0, 160)}` : ""}` : "Not connected. Connect the Omni to see packets arrive."}</div>
+    <div class="note" style="margin-top:2px">${conn ? `Connected to ${esc(conn.kind === "frp" ? "flighthook" : conn.kind === "relay" ? "the Omni relay (listening only)" : conn.name || "the Omni")}${battery != null && conn.kind !== "frp" ? ` · battery ${battery}%` : ""}${conn.firmware ? ` · device info: ${esc(JSON.stringify(conn.firmware)).slice(0, 160)}` : ""}` : "Not connected. Connect the Omni to see packets arrive."}</div>
     <div class="row"><button id="rKeep" class="${rawKeep ? "sel" : ""}">Show keep-alives &amp; status</button><button id="rClear" class="danger${armed === "rclear" ? " armed" : ""}">${armed === "rclear" ? "Tap again" : "Clear loose packets"}</button></div>`;
   let rows = [];
   try { rows = await store.listRaw({ limit: 300, keepAlive: rawKeep }); } catch {}
@@ -1725,7 +1728,7 @@ RawTap.on(e => {
   evt.idP = store ? store.addRaw(evt).then(id => (evt.id = id)).catch(() => null) : Promise.resolve(null);
   live.unshift(evt); if (live.length > 500) live.pop();
   if (e.direction === "in") {
-    if (e.source === "omni") { if (d.kind === "shot") pending = [evt]; else if (d.kind === "club" && pending.length) pending.push(evt); }
+    if (e.source === "omni" || e.source === "relay") { if (d.kind === "shot") pending = [evt]; else if (d.kind === "club" && pending.length) pending.push(evt); }
     else if (d.kind === "shot.launch") pending = [evt]; else if (/^shot\./.test(d.kind) && pending.length) pending.push(evt);
   }
   if (tab === "raw") scheduleRaw();
@@ -1793,12 +1796,80 @@ function onState(st) {
   if (st.disconnected) { conn = null; setConn("Disconnected · reconnect", ""); toast("Launch monitor disconnected"); }
 }
 const onShot = ({ shot, club }) => record(shot, club, conn && conn.kind === "frp" ? "frp" : "omni");
+
+// ------------------------------------------------------------------ the Omni relay: listen only
+// The relay copies every packet between the real Omni and the Square app. Range Lab builds shots
+// from the Omni's own packets and follows the club the Square app sets; it never sends anything.
+const servedByRelay = location.protocol === "http:" && location.pathname.startsWith("/range");
+let followSquare = lsGet("omniRangeLab:follow") !== "0", squareClub = null, relayShot = null, relayTimer = 0, lastShot = { hex: "", t: 0 }, relayWanted = null;
+const CODE_NAME = { DR: "Driver", W3: "3 wood", H4: "4 hybrid", I5: "5 iron", I6: "6 iron", I7: "7 iron", I8: "8 iron", I9: "9 iron", PW: "PW", GW: "Gap wedge", SW: "Sand wedge", LW: "Lob wedge", PT: "Putter" };
+function relayUrl(v) { return /^wss?:/.test(v) ? v : `ws://${/:\d+$/.test(v) ? v : v + ":8080"}/ws`; }
+async function connectRelay(addr) {
+  if (conn) { try { await conn.disconnect(); } catch {} conn = null; }
+  relayWanted = addr;
+  let ws;
+  try { ws = new RawTap.NativeWebSocket(relayUrl(addr)); } catch { toast("Couldn't open that relay address", 4000); setConn("Connect", ""); return; }
+  let closing = false;
+  const me_ = { kind: "relay", name: "Omni relay", disconnect: async () => { closing = true; relayWanted = null; ws.close(); } };
+  conn = me_;
+  setConn("Relay: connecting…", "busy");
+  ws.onmessage = m => {
+    let ev; try { ev = JSON.parse(m.data); } catch { return; }
+    if (ev.type === "hello" || ev.type === "status") relayStatus(ev.state);
+    else if (ev.type === "packet") RawTap.emit({ source: "relay", direction: ev.dir === "omni>app" ? "in" : ev.dir === "app>omni" ? "out" : "read", bytes: Uint8Array.from(ev.hex.split(" ").filter(Boolean), h => parseInt(h, 16)), uuid: ev.uuid, ts: ev.t });
+    else if (ev.type === "note" && ev.level !== "info") toast(`Relay: ${ev.msg}`, 4000);
+  };
+  ws.onclose = () => {
+    if (conn === me_) conn = null;
+    if (closing || relayWanted !== addr) return;
+    setConn("Relay lost · retrying", "busy");
+    setTimeout(() => { if (relayWanted === addr && !conn) connectRelay(addr); }, 2500);
+  };
+}
+function relayStatus(st) {
+  const o = st.omni || {}, s = st.standin || {};
+  const omni = { connected: "Omni on", searching: "looking for the Omni", connecting: "connecting to the Omni", disconnected: "Omni off" }[o.status] || o.status;
+  setConn(`Relay: ${omni}${s.status === "connected" ? " · Square app on" : s.status === "advertising" ? " · waiting for the app" : ""}`, o.status === "connected" ? "ok" : "busy");
+}
+RawTap.on(e => {
+  if (e.source !== "relay") return;
+  const d = RawTap.decode(e);
+  if (e.direction === "in" && d.kind === "shot") {
+    const hex = RawTap.hex(e.bytes);
+    if (hex === lastShot.hex && e.ts - lastShot.t < 1500) return; // the Omni sends each notification twice
+    lastShot = { hex, t: e.ts };
+    if (!d.fields.totalSpinRpm && squareClub !== "Putter") { toast("The Omni misread that one (no spin)."); return; }
+    clearTimeout(relayTimer); relayShot = d.fields;
+    relayTimer = setTimeout(() => finishRelayShot(null), 1500); // club data comes next if the app asks for it
+  } else if (e.direction === "in" && d.kind === "club" && relayShot) {
+    clearTimeout(relayTimer); finishRelayShot(d.fields);
+  } else if (e.direction === "out" && d.kind === "set-club") followSquareClub(d.fields.args || []);
+});
+function finishRelayShot(cf) {
+  const f = relayShot; relayShot = null; if (!f) return;
+  const ball = { speedMph: f.ballSpeedMps * 2.236936, vla: f.launchDeg, hla: f.directionDeg, spinRpm: f.totalSpinRpm, axisDeg: f.spinAxisDeg };
+  const cd = cf ? { Speed: cf.clubSpeedMps != null ? cf.clubSpeedMps * 2.236936 : null, Path: cf.pathDeg, FaceToTarget: cf.faceDeg, AngleOfAttack: cf.attackDeg, Loft: cf.dynamicLoftDeg, HorizontalFaceImpact: cf.impactHmm, VerticalFaceImpact: cf.impactVmm, Smash: cf.smash } : null;
+  record(ball, cd, "relay");
+}
+function followSquareClub(args) {
+  const code = Object.keys(OG.OMNI_CLUBS).find(k => OG.OMNI_CLUBS[k][0] === args[0] && OG.OMNI_CLUBS[k][1] === args[1]);
+  squareClub = CODE_NAME[code] || null;
+  renderLive();
+  if (!followSquare || !squareClub) return;
+  if (squareClub === "Putter") { toast("The Square app switched to putting"); return; }
+  const p = me();
+  if (!p.bag.includes(squareClub)) { toast(`The Square app picked the ${squareClub}, which isn't in ${p.name}'s bag`, 3500); return; }
+  if (curClub() !== squareClub) { p.club = squareClub; persistPlayer(p); selId = null; anim = null; renderAll(); toast(`Following the Square app: ${squareClub}`); }
+}
 $("conn").onclick = () => {
   const bt = !!navigator.bluetooth, saved = lsGet("omniRangeLab:frp") || "";
   openSheet(`<h2>Launch monitor</h2>
     ${conn ? `<div class="row"><span style="flex:1">Connected to ${esc(conn.kind === "frp" ? "flighthook" : conn.name || "the Omni")}.</span><button class="danger" id="cOff">Disconnect</button></div>` : ""}
     <h3>Square Omni over Bluetooth</h3><div class="row"><button class="go" id="cBt" ${bt ? "" : "disabled"}>Connect the Omni</button></div>
     <div class="note" style="margin-top:4px">${bt ? "Turn the Omni on and close the Square app first, as only one app can hold the Bluetooth link." : "This browser has no Bluetooth for web pages. Safari on iPad and iPhone doesn't, so use Chrome or Edge on a computer or Android, or flighthook below."}</div>
+    <h3>Omni relay (the NUC)</h3><div class="row"><input type="text" id="cRelay" placeholder="omni-relay.local" value="${esc(lsGet("omniRangeLab:relay") || (servedByRelay ? location.host : ""))}" style="flex:1;width:auto"><button id="cRel">Listen</button></div>
+    <div class="row"><button id="cFollow" class="${followSquare ? "sel" : ""}">Follow the Square app's club</button></div>
+    <div class="note" style="margin-top:4px">The relay sits between the Omni and the Square app, so both run at once. Range Lab only listens: it records the Omni's own packets and never sends it anything. ${location.protocol === "https:" ? "From this secure page browsers block the link, so open Range Lab from the relay instead: http://omni-relay.local:8080/range/" : ""}</div>
     <h3>flighthook</h3><div class="row"><input type="text" id="cAddr" placeholder="192.168.1.20" value="${esc(saved)}" style="flex:1;width:auto"><button id="cFrp">Connect</button></div>
     <div class="note" style="margin-top:4px">${location.protocol === "https:" ? "Browsers block this kind of link from a secure (https) page unless the address starts with wss://." : "Enter the computer's address, or a full ws:// address."}</div>
     <div class="row" style="justify-content:flex-end"><button id="cClose">Close</button></div>`);
@@ -1821,6 +1892,8 @@ $("conn").onclick = () => {
       else toast("Couldn't connect to the Omni", 4000);
     }
   };
+  $("cRel").onclick = () => { const v = $("cRelay").value.trim(); if (!v) return; lsSet("omniRangeLab:relay", v); closeSheet(); connectRelay(v); };
+  $("cFollow").onclick = () => { followSquare = !followSquare; lsSet("omniRangeLab:follow", followSquare ? "1" : "0"); $("cFollow").classList.toggle("sel", followSquare); };
   $("cFrp").onclick = async () => {
     const raw = $("cAddr").value.trim(); if (!raw) return;
     lsSet("omniRangeLab:frp", raw);
@@ -2021,6 +2094,7 @@ async function reload() {
     resize();
     if (moved) toast(`Moved ${moved} shot${moved === 1 ? "" : "s"} from the first Range Lab into the database`, 4000);
     if (storeInfo.kind !== "SQLite") toast(storeInfo.detail, 5000);
+    if (servedByRelay) fetch("/status").then(r => r.json()).then(j => { if (j.omniRelay) connectRelay(location.host); }).catch(() => {});
   } catch (e) { console.error(e); $("loading").textContent = "Couldn't start: " + e.message; }
 })();
 addEventListener("pagehide", () => { store && store.flush && store.flush(); });
