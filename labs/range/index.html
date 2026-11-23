@@ -392,6 +392,11 @@ else if (typeof exports === 'object'){
 <script>
 // Omni Golf engine pieces, copied verbatim from Omni Golf v4 (game/v4/index.html).
 // Only formatting differs, so the Range Lab runs exactly the game's ball flight and Omni code.
+// 23 Nov 2026: the turf rows of the ground table (tee, fairway, first cut, rough, deep rough) were
+// changed in both, to match the Square app's run: see tests/square_2026-11-23.json and
+// test_range_vs_square.py. The fairway was fitted to 18 iron shots (bounce e 0.25 -> 0.16, crater
+// 16 -> 26 deg, rolling resistance 3.2 -> 8 m/s2); the other turf rows were scaled by the same
+// ratios so they stay slower than the fairway. Fringe, green and bunker are unchanged.
 const OG = (() => {
   var ZS, Ic, we, J0, cf, j0, zi, In, ki, de, Fs, Ui, Wn, Fi;
   ((ZS = (2 * Math.PI) / 60),
@@ -401,11 +406,11 @@ const OG = (() => {
     (cf = { cdLo: 0.5, cdHigh: 0.205, cdSlope: -0.002, cdSpin: 0.315, a: 0.495, b: 0.483, cm: 0.0121 }),
     (j0 = {}));
   zi = {
-    tee: { name: "Tee", e: 0.25, mu: 0.45, mk: 0.35, crater: 16, roll: 3.2 },
-    fairway: { name: "Fairway", e: 0.25, mu: 0.45, mk: 0.35, crater: 16, roll: 3.2 },
-    semi: { name: "First cut", e: 0.22, mu: 0.5, mk: 0.4, crater: 15, roll: 4.5 },
-    rough: { name: "Rough", e: 0.16, mu: 0.6, mk: 0.5, crater: 12, roll: 7 },
-    deep: { name: "Deep rough", e: 0.1, mu: 0.7, mk: 0.6, crater: 10, roll: 11 },
+    tee: { name: "Tee", e: 0.16, mu: 0.45, mk: 0.35, crater: 26, roll: 8 },
+    fairway: { name: "Fairway", e: 0.16, mu: 0.45, mk: 0.35, crater: 26, roll: 8 },
+    semi: { name: "First cut", e: 0.141, mu: 0.5, mk: 0.4, crater: 24.4, roll: 11.25 },
+    rough: { name: "Rough", e: 0.102, mu: 0.6, mk: 0.5, crater: 19.5, roll: 17.5 },
+    deep: { name: "Deep rough", e: 0.064, mu: 0.7, mk: 0.6, crater: 16.2, roll: 27.5 },
     fringe: { name: "Fringe", e: 0.24, mu: 0.45, mk: 0.35, crater: 17, roll: 1.4 },
     green: { name: "Green", e: 0.24, mu: 0.42, mk: 0.3, crater: 18, roll: QS(10) },
     sand: { name: "Bunker", e: 0.05, mu: 0.9, mk: 0.8, crater: 0, roll: 12 },
@@ -1732,7 +1737,7 @@ function renderShot() {
   }
   h += `<div class="sec"><div class="sec-h"><span class="badge calc">Calculated by Range Lab</span><span class="sec-note">our physics, worked out from the numbers above</span></div>`;
   h += `<div class="grid">${tile("calc", "Carry", f1(c && c.carry), "yd")}${tile("calc", "Total", f1(c && c.total), "yd")}${dtile("calc", "Offline", c && c.side, "yd")}${tile("calc", "Apex", f1(c && c.apex), "yd")}${tile("calc", "Descent", f1(c && c.descent), "°")}${tile("calc", "Hang time", f1(c && c.hang), "s")}</div><canvas id="side"></canvas>`;
-  h += `<div class="note">Still air, 15 °C, sea level, landing and rolling on fairway (Omni Golf v4 physics). R is right of the target line.</div></div>`;
+  h += `<div class="note">Still air, 15 °C, sea level, landing and rolling on fairway (Omni Golf v4 physics, with the bounce and roll matched to the Square app's). R is right of the target line.</div></div>`;
   h += `<div class="sec"><div class="sec-h"><span class="badge calc">Square app carry</span><span class="sec-note">Square's own calculation, typed in to compare</span></div><div class="row"><input type="number" id="appCarry" inputmode="decimal" step="0.1" placeholder="yd" value="${s.app != null ? s.app : ""}"><span id="appDiff">${diffLine(c && c.carry, s.app)}</span></div></div>`;
   const clubOpts = [...CLUBS.filter(c => p.bag.includes(c) || c === s.club), DIAG];
   h += `<div class="sec"><div class="sec-h"><span class="badge plain">This shot</span><span class="sec-note">change the club or swing if they were wrong when you hit it</span></div>
