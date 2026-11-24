@@ -37,6 +37,9 @@
   .lv.calcv { opacity: .7; font-size: 13px; border-left: 1px dashed rgba(255,255,255,.3); padding-left: 10px; }
   .lv.tgt { color: #bae6fd; border-left: 1px solid rgba(125,211,252,.4); padding-left: 10px; font-size: 13px; }
   .lv .need { font-size: 11px; color: #bae6fd; opacity: .9; margin-top: 1px; }
+  .lv .need.guide { color: #cbd5e1; opacity: .75; }
+  .gm-guide { font-size: 12px; opacity: .8; color: #e2e8f0; }
+  .tile.guide { border: 1px dashed rgba(125,211,252,.45); background: rgba(12,74,110,.18); }
   .lv.in b { color: #86efac; } .lv.out b { color: #fcd34d; }
   .lv.calcv .need { color: #bae6fd; }
   button.mini.tog { margin-left: auto; flex: none; font-size: 11.5px; padding: 4px 8px; }
@@ -1276,8 +1279,10 @@ const BANDS = (() => {
 
   // Launch conditions for a swing at ball speed v with this club's band profile.
   // Slower than a full swing launches a little higher with less spin (Omni Golf v4's rule).
+  // Goes down to a tenth of a full swing, for the Train tab's short chips; practice targets
+  // only look between 35% and 125% (see solve).
   function shotAt(p, v) {
-    const a = Math.min(1.25, Math.max(0.35, v / p.ball));
+    const a = Math.min(1.25, Math.max(0.1, v / p.ball));
     return { speedMph: Math.round(v * 10) / 10, vla: Math.round(Math.max(4, p.launch + (1 - a) * 4) * 10) / 10, hla: 0, spinRpm: Math.round(p.spin * a), axisDeg: 0 };
   }
 
@@ -1746,10 +1751,11 @@ function renderLive() {
     for (const [k, label, get, fmt, u] of LIVE) {
       const n = nd && nd.m[k], v = b ? get(b) : null;
       if (!b && !n) continue;
-      const cls = n && n.tol && b ? (within(v, n) ? " in" : " out") : ""; // no tolerance yet during a warm-up
-      h += `<span class="lv${cls}"><span class="lk">${label}</span><span><b>${b ? fmt(v) : "–"}</b>${b ? u : ""}</span>${n ? `<span class="need">need ${fmt(n.want)}${n.tol ? ` ±${n.tol[0] === "pct" ? n.tol[1] + "%" : n.tol[1]}` : ""}</span>` : ""}</span>`;
+      const cls = n && n.tol && b ? (within(v, n) ? " in" : " out") : ""; // guides, and warm-ups, have no tolerance
+      const needTxt = !n ? "" : n.guide ? `<span class="need guide">≈ ${fmt(n.want)}</span>` : `<span class="need">need ${fmt(n.want)}${n.tol ? ` ±${n.tol[0] === "pct" ? n.tol[1] + "%" : n.tol[1]}` : ""}</span>`;
+      h += `<span class="lv${cls}"><span class="lk">${label}</span><span><b>${b ? fmt(v) : "–"}</b>${b ? u : ""}</span>${needTxt}</span>`;
     }
-    h += `<span class="lv calcv"><span class="lk">Carry</span><span>≈ ${f1(c && c.carry)} yd</span>${nd && nd.carry ? `<span class="need">need ${f0(nd.carry)}</span>` : ""}</span>`;
+    h += `<span class="lv calcv"><span class="lk">Carry</span><span>≈ ${f1(c && c.carry)} yd</span>${nd && nd.carry ? (nd.carryGuide ? `<span class="need guide">≈ ${f0(nd.carry)}</span>` : `<span class="need">need ${f0(nd.carry)}</span>`) : ""}</span>`;
     h += `<span class="lv calcv"><span class="lk">Total</span><span>≈ ${f1(c && c.total)} yd</span></span>`;
   }
   if (nd && nd.from) h += `<span class="lv tgt"><span class="lk">Aiming for</span>${esc(nd.from)}</span>`;
@@ -2716,13 +2722,57 @@ function trainScore(s) {
   if (st.sound) beep(drill.warm ? "warm" : drill.done ? "done" : drill.hit ? "hit" : "miss");
   return true;
 }
-// what the live bar asks for while a game is on
+// ---- the other numbers, to go with what you're training
+// For the club in hand and your level (Practice's "Play to", and your own launch angle if you've set
+// one), the same model as practice targets: at a given ball speed, launch is a little higher than a
+// full swing and spin scales with speed. The ball speed comes from the target if you're training
+// speed, from the spin if you're training spin, and otherwise from your last shot with this club.
+// The numbers you're training replace the model's, and the flight is worked out from the lot.
+const guideCache = new Map();
+function trainGuide(st = tState(), g = GAME[st.game], want = wantOf(st, g)) {
+  const p = me(), club = omniClubFor(curClub()), own = launchFor(p, curClub()), band = p.band || "m-10-18";
+  const q = ownProfile(band, club, own);
+  if (!q) return null;
+  let v = want.speed, from = "target";
+  if (v == null && (want.back != null || want.spin != null)) { v = (want.spin != null ? want.spin : want.back) / q.spin * q.ball; from = "spin"; }
+  if (v == null) {
+    const last = S.shots.filter(s => s.player === p.id && s.club === curClub() && s.src !== "manual").pop();
+    v = last ? last.ball.speedMph : q.ball; from = last ? "last" : "full";
+  }
+  v = Math.max(3, v);
+  const k = JSON.stringify([band, club, own, Math.round(v * 10), want]);
+  if (guideCache.has(k)) return guideCache.get(k);
+  const sh = BANDS.shotAt(q, v), deg = Math.PI / 180;
+  const total = want.spin != null ? want.spin : want.back != null ? Math.hypot(want.back, want.side || 0) : sh.spinRpm;
+  const axis = want.axis != null ? want.axis : want.side != null ? Math.atan2(want.side, want.back != null ? want.back : total) / deg : 0;
+  const ball = { speedMph: v, vla: want.launch != null ? want.launch : sh.vla, hla: want.dir != null ? want.dir : 0, spinRpm: total, axisDeg: axis };
+  let flight = null;
+  try {
+    const r = OG.simulate(ball, { course: FLAT, start: [0, 0, 0], aimYaw: 0, dt: 0.002 });
+    flight = { carry: r.carry / YD, total: r.total / YD, apex: r.apex / YD, descent: r.landAngle };
+  } catch {}
+  const out = { from, club, band, own, ball, back: total * Math.cos(axis * deg), side: total * Math.sin(axis * deg), clubMph: q.club * v / q.ball, swing: v / q.ball, flight };
+  guideCache.set(k, out);
+  return out;
+}
+// what the live bar asks for while a game is on: the targets you're training (scored), and the
+// guide's numbers for the rest (not scored, marked ≈)
 function trainNeeds() {
   const st = tState();
   if (!st.on) return null;
   const g = GAME[st.game], want = wantOf(st, g), tol = st.warm > 0 ? {} : tolsFor(st, want), m = {};
+  const gd = trainGuide(st, g, want);
+  if (gd) {
+    const b = gd.ball;
+    for (const [k, v] of [["speed", b.speedMph], ["launch", b.vla], ["dir", b.hla], ["spin", b.spinRpm], ["axis", b.axisDeg], ["back", gd.back], ["side", gd.side]]) m[k] = { want: v, guide: true };
+  }
   for (const k of Object.keys(want)) m[k] = { want: want[k], tol: tol[k] || null };
-  return { from: `Train: ${g.name}`, m, game: true };
+  return { from: `Train: ${g.name}`, m, game: true, carry: gd && gd.flight ? gd.flight.carry : null, carryGuide: true };
+}
+function guideText(gd) {
+  if (!gd) return "";
+  const f = gd.flight, b = gd.ball;
+  return `${esc(SHORT[gd.club] || gd.club)} at ${f1(b.speedMph)} mph: launch ≈ ${f1(b.vla)}°, spin ≈ ${f0(b.spinRpm)} rpm, club ≈ ${f1(gd.clubMph)} mph (${f0(gd.swing * 100)}% of a full swing)${f ? `, carry ≈ ${f0(f.carry)} yd, apex ≈ ${f1(f.apex)} yd, descent ≈ ${f0(f.descent)}°` : ""}`;
 }
 
 // ---- a little sound: on by default, and only after you've pressed Start (browsers need a tap first)
@@ -2764,6 +2814,8 @@ function renderGame() {
       <span class="gm-tol">${Object.keys(want).map(k => tolText(k, tol[k], want[k])).join(" · ")}</span>
       <span class="gm-dots" aria-label="${streak} of ${st.goal} in a row">${Array.from({ length: st.goal }, (_, i) => `<i class="${i < streak ? "on" : ""}"></i>`).join("")}</span></div>`;
   }
+  const gd = trainGuide(st, g, want);
+  if (gd) h += `<div class="gm-guide">What goes with it: ${guideText(gd)}</div>`;
   const idx = main.ladder.indexOf(want[g.main]), next = idx >= 0 && idx < main.ladder.length - 1 ? main.ladder[idx + 1] : null;
   if (d && d.done && !d.testRun && st.warm === 0) {
     const info = levelInfo(g.id, want), took = info.done.length ? info.done[info.done.length - 1].shots : null;
@@ -2804,6 +2856,13 @@ function renderTrain() {
   }).join("")}</div>
     <div class="row"><label class="muted" for="tOther">Other</label><input type="number" id="tOther" inputmode="decimal" step="${main.step}" value="${main.ladder.includes(want[g.main]) ? "" : want[g.main]}" placeholder="${main.unit}" style="width:90px"></div>`;
   if (g.also) h += `<div class="note">And at the same time: ${Object.keys(g.also).map(k => `${METRICS[k].name.toLowerCase()} ${METRICS[k].val(g.also[k])}`).join(", ")}.</div>`;
+  const gd = trainGuide(st, g, want), bandInfo = BANDS.byId[p.band || "m-10-18"];
+  if (gd) {
+    const b = gd.ball, f = gd.flight || {}, mark = k => (k in want ? "need" : "guide");
+    h += `<div class="sec"><div class="sec-h"><span class="badge tgt">What you need</span><span class="sec-note">${{ target: "", spin: "ball speed from the spin target, ", last: "ball speed from your last shot with this club, ", full: "a full swing (no shots with this club yet), " }[gd.from]}for a ${esc(bandInfo ? bandInfo.label : gd.band)} ${esc(gd.club)}${gd.own != null ? `, launching at ${esc(p.name)}'s own ${f1(gd.own)}°` : ""}. ≈ means a guide, not scored</span></div>
+      <div class="grid">${tile(mark("speed"), "Ball speed", ("speed" in want ? "" : "≈") + f1(b.speedMph), "mph")}${tile(mark("launch"), "Launch", ("launch" in want ? "" : "≈") + f1(b.vla), "°")}${tile(mark("spin") === "need" || "back" in want ? "need" : "guide", "Spin", ("spin" in want ? "" : "≈") + f0(b.spinRpm), "rpm")}${tile(mark("dir"), "Direction", ("dir" in want ? "" : "≈") + lr(b.hla, "°"))}${tile("guide", "Club speed", "≈" + f1(gd.clubMph), "mph")}${tile("guide", "Swing", "≈" + f0(gd.swing * 100), "% of full")}${tile("guide", "Carry / total", `≈${f0(f.carry)} / ${f0(f.total)}`, "yd", true)}${tile("guide", "Apex / descent", `≈${f1(f.apex)} / ${f0(f.descent)}`, "yd / °", true)}${tile(mark("axis") === "need" || "side" in want ? "need" : "guide", "Back / side", `${"back" in want ? "" : "≈"}${f0(gd.back)} / ${lrInt(gd.side, "")}`, "rpm", true)}</div>
+      <div class="note">Change the level in Practice ("Play to"), or set your own launch angle for this club in Player.</div></div>`;
+  }
   h += `<h3>Tolerance</h3><div class="tolrow">${TIERS.map((t, i) => {
     const vals = Object.keys(want).map(k => { const v = i === MINE ? mineTol(k) : METRICS[k].tiers[i]; return v == null ? null : (METRICS[k].kind === "pct" ? `±${v}%` : `±${v}${METRICS[k].unit === "°" ? "°" : ""}`); });
     return `<button data-tier="${i}" class="${i === st.tier ? "sel" : ""}">${t} <span class="muted">${vals.every(v => v) ? vals.join(" ") : "not measured"}</span></button>`;
