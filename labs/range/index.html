@@ -188,7 +188,7 @@
   table.dist td.none { opacity: .35; }
   table.dist td.gap { opacity: .65; font-size: 11.5px; }
   .ladder { display: flex; flex-direction: column; gap: 1px; }
-  .lad { display: flex; align-items: stretch; gap: 6px; height: 22px; }
+  .lad { display: flex; align-items: stretch; gap: 6px; height: 30px; }
   .lad .ll { width: 30px; font-size: 11.5px; opacity: .8; flex: none; align-self: center; }
   .lad .lt { position: relative; flex: 1; border-top: 1px solid rgba(255,255,255,.07); }
   .lad.ticks { height: 14px; } .lad.ticks .lt { border: 0; }
@@ -196,7 +196,7 @@
   .lad .spread { position: absolute; height: 2px; border-radius: 1px; opacity: .45; }
   .lad .dot, .legend .dot { position: absolute; width: 8px; height: 8px; margin-left: -4px; border-radius: 50%; border: 1px solid rgba(0,0,0,.6); box-sizing: border-box; }
   .legend .dot { position: static; display: inline-block; margin: 0 4px 0 0; vertical-align: -1px; }
-  .s0 { background: #86efac; } .s1 { background: #7dd3fc; } .s2 { background: #fcd34d; }
+  .s0 { background: #86efac; } .s1 { background: #7dd3fc; } .s2 { background: #fcd34d; } .s3 { background: #f0abfc; } .s4 { background: #fdba74; }
   .legend { display: flex; gap: 12px; flex-wrap: wrap; font-size: 11.5px; opacity: .85; margin-top: 4px; align-items: center; }
   #loading { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; background: #3f6d2f; font-weight: 600; z-index: 30; }
 </style>
@@ -723,6 +723,7 @@ const OG = (() => {
           if (
             !M &&
             ((M = b.slice()),
+            (y.landState = { p: b.slice(), v: u.slice(), w: v.slice(), t: w }), // where it first lands: position, velocity, spin (m, m/s, rad/s), time
             (y.hang = w),
             (y.landAngle = (Math.atan2(-u[1], Math.hypot(u[0], u[2])) * 180) / Math.PI),
             (y.landSpeed = Math.hypot(u[0], u[1], u[2])),
@@ -1093,6 +1094,7 @@ const OG = (() => {
 //
 //   OmniModel.YD, FT, MPS                 units: a yard and a foot in metres; mph per m/s
 //   OmniModel.CLUBS                       the clubs in a bag, longest first (the putter isn't one)
+//   OmniModel.impactClubs(), soleClubs(), tour(club)   the labs' club tables and tour shots; BEAUFORT
 //   OmniModel.SHORT[club], SPECS[club]    a club's short label, and its loft and head details
 //   OmniModel.LEVELS                      typical full-swing numbers by level of golfer (below)
 //   OmniModel.numbers(player, club)       a player's full-swing numbers for a club: their level's,
@@ -1101,7 +1103,9 @@ const OG = (() => {
 //   OmniModel.aimOf(player), practiceTarget(player, club)   practice or Train; the target a shot counts for
 //   OmniModel.TRAIN, trainOf(player), trainWant(settings)    Train's games, a player's game and its target
 //   OmniModel.fly(ball, opts)             a ball's flight, in yards (carry, total, apex, side, ...)
-//   OmniModel.flightOf(shot)              a recorded shot's flight (cached per shot)
+//   OmniModel.flightOf(shot)              a recorded shot's flight (cached per shot); flights(shots)
+//   OmniModel.SWINGS                      full, ⅔, ⅓, pitch, chip: what a player says they're hitting
+//   OmniModel.OMNI_CODES[club], teeOf(shot)   the Omni's club codes; a shot's tee height (mm)
 //   OmniModel.distances(player, shots, since)   per club and swing averages, as the Distances tab
 //   OmniModel.aimFor(player, club, want, opts)   all the numbers that go with a target (the aim)
 //   OmniModel.yd(m), metres(yd)           conversions; ydBetween(a, b): ground distance, [x, z] in m
@@ -1131,7 +1135,7 @@ const OmniModel = (() => {
     "9 iron": { loft: 42 },
     "PW": { loft: 46, dyn: 33, aoa: -5, M: 0.3, e: 0.77, spinK: 1, sole: 0.024, bounce: 6, R: 1.38, width: 0.06, lean: 7, camber: 0.25 },
     "Gap wedge": { loft: 50 },
-    "Sand wedge": { loft: 56, dyn: 44, aoa: -5.5, M: 0.31, e: 0.76, spinK: 1 },
+    "Sand wedge": { loft: 56, dyn: 44, aoa: -5.5, M: 0.31, e: 0.76, spinK: 1, sole: 0.035, bounce: 12, R: 1.33, width: 0.058, lean: 3, camber: 0.2 },
     "Lob wedge": { loft: 60 },
     "Putter": { loft: 3 },
   };
@@ -1156,6 +1160,17 @@ const OmniModel = (() => {
     return flights.get(k);
   }
   const forget = id => flights.delete(id);
+  const flights_ = shots => shots.map(s => { const f = flightOf(s); return f && { carry: f.carry, total: f.total, side: f.side }; }); // many at once (the NUC's shot search)
+
+  // ------------------------------------------------------------------ the Omni itself
+  // The club codes the Omni takes (command 130: [code, group]); "Any club" is told to it as a 7 iron.
+  const OMNI_CODES = { "Driver": [1, 0], "3 wood": [3, 1], "4 hybrid": [14, 1], "5 iron": [5, 2], "6 iron": [6, 2], "7 iron": [7, 2], "8 iron": [8, 2], "9 iron": [9, 2],
+    "PW": [10, 2], "Gap wedge": [11, 2], "Sand wedge": [12, 2], "Lob wedge": [13, 2], "Putter": [1, 3], "diag": [7, 2] };
+  // Where the ball sat, from the Omni's ball-detected status: three numbers in mm, z the height of the
+  // ball's centre above the Omni's ground (on a mat about 23.6). Tee height: how far the bottom of the
+  // ball is above that ground (a ball's radius is 21.35 mm), so about 2 mm on a mat, more on a tee.
+  const BALL_R_MM = 21.35;
+  const teeOf = shot => (shot && shot.spot && shot.spot.z != null ? shot.spot.z - BALL_R_MM : null);
 
   // ------------------------------------------------------------------ levels
   // LEVELS.LIST, byId[id]: the levels; profile(id)[club]: { club, ball (mph), launch, spin, est };
@@ -1273,6 +1288,32 @@ const OmniModel = (() => {
   }
   const LEVELS = { ORDER, LIST, byId, profile, solve, shotAt, DEFAULT: "m-10-18" };
 
+  // The labs' club tables, from the specs and a level's club speeds (tour by default: the labs model tour
+  // players), in the shapes the labs and the game use. Launch Lab and Omni Golf's lie model: the head
+  // meeting the ball; Divot Lab: the sole; Roll and Airflow Lab: a full swing's launch.
+  const LAB_KEYS = [["driver", "Driver", "Driver"], ["w3", "3 wood", "3-wood"], ["i5", "5 iron", "5-iron"], ["i7", "7 iron", "7-iron"], ["pw", "PW", "Pitching wedge"], ["sw", "Sand wedge", "Sand wedge"]];
+  const labClubs = (fields, need, level) => {
+    const prof = profile(level), out = {};
+    for (const [k, club, name] of LAB_KEYS) {
+      const s = SPECS[club];
+      if (!need.every(f => s[f] != null)) continue;
+      out[k] = { name, ...Object.fromEntries(fields.map(f => [f, f === "mph" ? prof[club].club : s[f]]).filter(([, v]) => v != null)) };
+    }
+    return out;
+  };
+  const impactClubs = (level = "pga") => labClubs(["loft", "dyn", "aoa", "mph", "M", "e", "spinK", "from"], ["dyn"], level);
+  const soleClubs = (level = "pga") => labClubs(["loft", "sole", "bounce", "R", "width", "mph", "lean", "camber"], ["sole"], level);
+  // a level's full swing with a club, as a launch: { speedMph, vla, spinRpm }
+  const tour = (club, level = "pga") => { const q = profile(level)[club]; return { speedMph: q.ball, vla: q.launch, spinRpm: q.spin }; };
+
+  // ------------------------------------------------------------------ wind
+  // The Beaufort scale: [force, typical wind at 10 m (m/s), name, what you see on land] (Wind, Sway and
+  // Grass Lab)
+  const BEAUFORT = [[0, 0.2, "Calm", "Smoke rises vertically."], [1, 0.9, "Light air", "Wind direction shown by smoke drift only."], [2, 2.4, "Light breeze", "Wind felt on face, leaves rustle."],
+    [3, 4.4, "Gentle breeze", "Leaves and small twigs in constant motion."], [4, 6.7, "Moderate breeze", "Raises dust and loose paper; small branches move."],
+    [5, 9.3, "Fresh breeze", "Small trees in leaf begin to sway."], [6, 12.3, "Strong breeze", "Large branches in motion."], [7, 15.5, "Near gale", "Whole trees in motion."],
+    [8, 18.9, "Gale", "Breaks twigs off trees."], [9, 22.6, "Severe gale", "Slight structural damage."]];
+
   // ------------------------------------------------------------------ a player's numbers
   // player: { band (their level), bag: [club], launch: { club: their own full-swing launch angle } }
   const ownLaunch = (player, club) => { const v = player && player.launch ? player.launch[club] : null; return v == null || v === "" || !isFinite(v) ? null : +v; };
@@ -1305,7 +1346,9 @@ const OmniModel = (() => {
   }
   const byClub = club => ORDER.includes(club);
   // ------------------------------------------------------------------ swings and distances
-  const SWINGS = [{ id: "full", short: "Full", name: "Full swing" }, { id: "2/3", short: "⅔", name: "⅔ swing" }, { id: "1/3", short: "⅓", name: "⅓ swing" }];
+  // the kinds of shot a player says they're hitting; each has its own distances
+  const SWINGS = [{ id: "full", short: "Full", name: "Full swing" }, { id: "2/3", short: "⅔", name: "⅔ swing" }, { id: "1/3", short: "⅓", name: "⅓ swing" },
+    { id: "pitch", short: "Pitch", name: "Pitch" }, { id: "chip", short: "Chip", name: "Chip" }];
   const swingOf = s => (SWINGS.some(w => w.id === s.swing) ? s.swing : "full");
   const mean = a => a.length ? a.reduce((x, y) => x + y, 0) / a.length : null;
   const sd = a => { if (a.length < 2) return null; const m = mean(a); return Math.sqrt(a.reduce((x, y) => x + (y - m) ** 2, 0) / (a.length - 1)); };
@@ -1422,7 +1465,7 @@ const OmniModel = (() => {
   // A new player: the shape the NUC's database stores (relay/omni_relay/data.py)
   const newPlayer = (id, name) => ({ id, name, hand: "R", bag: ORDER.slice(), club: "7 iron", swing: "full", band: LEVELS.DEFAULT, practiceYd: 150, practiceOn: false, launch: {}, settings: {} });
 
-  return { YD, FT, MPS, yd, metres, ydBetween, CLUBS, ORDER, PUTTER, SHORT, SPECS, FLAT, fly, carryOf, LEVELS, ownLaunch, levelOf, numbers, bagOf, fullCarry, flightOf, forget, SWINGS, swingOf, mean, sd, stat, distances, solved, aimFor, aimOf, practiceTarget, TRAIN, trainOf, trainWant, sameWant, drills, trainProgress, newPlayer };
+  return { YD, FT, MPS, yd, metres, ydBetween, CLUBS, ORDER, PUTTER, SHORT, SPECS, FLAT, fly, carryOf, LEVELS, ownLaunch, levelOf, numbers, bagOf, fullCarry, impactClubs, soleClubs, tour, BEAUFORT, flightOf, forget, SWINGS, swingOf, OMNI_CODES, BALL_R_MM, teeOf, flights: flights_, mean, sd, stat, distances, solved, aimFor, aimOf, practiceTarget, TRAIN, trainOf, trainWant, sameWant, drills, trainProgress, newPlayer };
 })();
 </script>
 <script data-omni-shared="data">
@@ -1641,7 +1684,8 @@ const OmniRemote = (() => {
 // engine code stays untouched: when the engine listens for Omni notifications or writes a
 // command, the tap sees the same bytes first. Decoding follows the v4 Bluetooth client:
 //   in  0x91 ..          battery (byte 1 = %)
-//   in  0x11 0x01 ..     status (byte 3: 1 or 2 = ready; byte 4: 1 = ball detected)
+//   in  0x11 0x01 ..     status (byte 3: 1 or 2 = ready; byte 4: 1 = ball detected; with a ball,
+//                        bytes 5-16: where it sits, three int32 in hundredths of a mm, the third its height)
 //   in  0x11 0x02 ..     shot: int16 little-endian at 3 ball speed (m/s x100), 5 launch (x100),
 //                        7 direction (x100), 9 total spin, 11 spin axis (x100, sign flipped),
 //                        13 back spin, 15 side spin (sign flipped)
@@ -1715,7 +1759,14 @@ const RawTap = (() => {
     }
     if (b[0] !== 0x11) return { kind: "unknown", summary: "Unrecognised packet", fields: {} };
     switch (b[1]) {
-      case 1: return { kind: "status", summary: `Status: ${b[3] === 1 || b[3] === 2 ? "ready" : "not ready"}, ball ${b[4] === 1 ? "detected" : "not detected"}`, fields: { ready: b[3], detected: b[4] } };
+      case 1: {
+        const fields = { ready: b[3], detected: b[4] };
+        if (b.length >= 17 && b[4] === 1) { // where the ball sits: three 32-bit numbers, hundredths of a mm (the third its height)
+          const dv = new DataView(b.buffer, b.byteOffset, b.byteLength);
+          fields.spot = { x: dv.getInt32(5, true) / 100, y: dv.getInt32(9, true) / 100, z: dv.getInt32(13, true) / 100 };
+        }
+        return { kind: "status", summary: `Status: ${b[3] === 1 || b[3] === 2 ? "ready" : "not ready"}, ball ${b[4] === 1 ? "detected" : "not detected"}${fields.spot ? ` at ${fields.spot.x.toFixed(1)}, ${fields.spot.y.toFixed(1)} mm, centre ${fields.spot.z.toFixed(1)} mm up` : ""}`, fields };
+      }
       case 3: return { kind: "state", summary: `State: ${STATES[b[3]] || b[3]}`, fields: { state: b[3] } };
       case 2: {
         const f = { ballSpeedMps: i16(3) / 100, launchDeg: i16(5) / 100, directionDeg: i16(7) / 100, totalSpinRpm: i16(9), spinAxisDeg: -i16(11) / 100, backSpinRpm: i16(13), sideSpinRpm: i16(15) == null ? null : -i16(15) };
@@ -1768,11 +1819,12 @@ const RawTap = (() => {
 //   player = { id, name, hand: "R"|"L", club, swing, band, practiceYd, practiceOn, bag: [club],
 //              launch: { club: degrees },                    // the player's own launch angle per club
 //              settings: { aim, train, ... } }               // app settings every app and the Omni connector share
-//   shot   = { id, player, club, swing: "full"|"2/3"|"1/3", excluded: bool, src: "omni"|"relay"|"frp"|"manual", ts,
+//   shot   = { id, player, club, swing: "full"|"2/3"|"1/3"|"pitch"|"chip", excluded: bool, src: "omni"|"relay"|"frp"|"manual", ts,
 //              ball: { speedMph, vla, hla, spinRpm, axisDeg, backSpin, sideSpin },   // measured
 //              cd: { Speed, Path, FaceToTarget, AngleOfAttack, Loft, HorizontalFaceImpact,
 //                    VerticalFaceImpact, Smash } | null,                            // measured
-//              app: number|null, target: { yd, band, need } | null }
+//              app: number|null, target: { yd, band, need } | null,     // app: the Square app's carry
+//              where: "range"|"train"|"game"|null, omniClub: string|null, spot: { x, y, z } (mm) | null }
 //   event  = { id, ts, source: "omni"|"flighthook", direction: "in"|"out"|"read", kind,
 //              hex, text, decoded, shotId }
 //
@@ -1824,8 +1876,21 @@ const MIGRATIONS = [
   // a player's app settings, shared by every app and the Omni connector: which mode the centre follows
   // ("aim"), the Train game ("train"), ... as JSON
   `ALTER TABLE players ADD COLUMN settings_json TEXT;`,
+  // which app a shot was played in, the Omni's own club, where the ball sat, the bin (the NUC's: a
+  // deleted shot waits there 30 days), and indexes for finding shots by time, swing and app
+  `ALTER TABLE shots ADD COLUMN played_in TEXT;
+   ALTER TABLE shots ADD COLUMN omni_club TEXT;
+   ALTER TABLE shots ADD COLUMN ball_x_mm REAL;
+   ALTER TABLE shots ADD COLUMN ball_y_mm REAL;
+   ALTER TABLE shots ADD COLUMN ball_z_mm REAL;
+   ALTER TABLE shots ADD COLUMN deleted_at INTEGER;
+   CREATE INDEX shots_by_time ON shots (player_id, ts);
+   CREATE INDEX shots_by_swing ON shots (player_id, swing, ts);
+   CREATE INDEX shots_by_place ON shots (player_id, played_in, ts);
+   CREATE INDEX shots_binned ON shots (deleted_at);`,
 ];
-const SWING_IDS = ["full", "2/3", "1/3"];
+const SWING_IDS = OmniModel.SWINGS.map(w => w.id);
+const PLACES = ["range", "train", "game"];
 const jsonObj = t => { try { const v = t ? JSON.parse(t) : {}; return v && typeof v === "object" && !Array.isArray(v) ? v : {}; } catch { return {}; } };
 const swingId = v => (SWING_IDS.includes(v) ? v : "full");
 
@@ -1834,7 +1899,8 @@ const num = v => (v == null || v === "" || !isFinite(+v) ? null : +v);
 function shotToRow(s) {
   const r = { id: s.id, player_id: s.player, club: s.club, swing: swingId(s.swing), excluded: s.excluded ? 1 : 0, source: s.src, ts: s.ts, app_carry_yd: num(s.app),
     target_yd: s.target ? num(s.target.yd) : null, target_band: (s.target && s.target.band) || null, // a Train game's target has no band; sql.js can't store undefined
-    target_json: s.target ? JSON.stringify(s.target) : null };
+    target_json: s.target ? JSON.stringify(s.target) : null, played_in: PLACES.includes(s.where) ? s.where : null, omni_club: s.omniClub || null };
+  for (const k of "xyz") r[`ball_${k}_mm`] = num(s.spot && s.spot[k]);
   for (const [k, c] of BALL_COLS) r[c] = num(s.ball && s.ball[k]);
   for (const [k, c] of CLUB_COLS) r[c] = num(s.cd && s.cd[k]);
   return r;
@@ -1844,7 +1910,9 @@ function rowToShot(r) {
   let cd = null;
   if (CLUB_COLS.some(([, c]) => r[c] != null)) { cd = {}; for (const [k, c] of CLUB_COLS) cd[k] = r[c] == null ? null : r[c]; }
   let target = null; try { target = r.target_json ? JSON.parse(r.target_json) : null; } catch {}
-  return { id: r.id, player: r.player_id, club: r.club, swing: swingId(r.swing), excluded: !!r.excluded, src: r.source, ts: r.ts, ball, cd, app: r.app_carry_yd, target };
+  const spot = r.ball_z_mm == null ? null : { x: r.ball_x_mm, y: r.ball_y_mm, z: r.ball_z_mm };
+  return { id: r.id, player: r.player_id, club: r.club, swing: swingId(r.swing), excluded: !!r.excluded, src: r.source, ts: r.ts, ball, cd, app: r.app_carry_yd, target,
+    where: r.played_in || null, omniClub: r.omni_club || null, spot };
 }
 function rowToEvent(r) {
   let decoded = null; try { decoded = r.decoded ? JSON.parse(r.decoded) : null; } catch {}
@@ -1940,7 +2008,7 @@ class SqliteStore {
     this.dirty();
   }
   async deletePlayer(id) { this.journal("deletePlayer", id); this.run("DELETE FROM players WHERE id = ?", [id]); }
-  async loadShots() { return this.all("SELECT * FROM shots ORDER BY ts").map(rowToShot); }
+  async loadShots() { return this.all("SELECT * FROM shots WHERE deleted_at IS NULL ORDER BY ts").map(rowToShot); }
   async saveShot(s) {
     this.journal("saveShot", s);
     const r = shotToRow(s), cols = Object.keys(r);
@@ -2073,7 +2141,7 @@ const OM = OmniModel, BANDS = OM.LEVELS, CLUBS = OM.CLUBS, SHORT = OM.SHORT;
 const DIAG = "diag", DIAG_OMNI_CLUB = "7 iron";
 const SWINGS = OM.SWINGS.map(w => [w.id, w.short, w.name]);
 const SWING_SHORT = Object.fromEntries(SWINGS.map(([k, sh]) => [k, sh])), SWING_LONG = Object.fromEntries(SWINGS.map(([k, , lg]) => [k, lg]));
-const CSV_SWING = { full: "full", "2/3": "two-thirds", "1/3": "one-third" }; // "2/3" would turn into a date in Excel
+const CSV_SWING = { full: "full", "2/3": "two-thirds", "1/3": "one-third", pitch: "pitch", chip: "chip" }; // "2/3" would turn into a date in Excel
 const swingOf = OM.swingOf;
 const FLAT = OM.FLAT, YD = OM.YD, CUR_KEY = "omniRangeLab:current", V1_KEY = "omniRangeLab:v1";
 const $ = id => document.getElementById(id);
@@ -2374,7 +2442,7 @@ function renderDist() {
     h += `<div class="lad"><span class="ll">${esc(SHORT[c] || c)}</span><div class="lt">`;
     SWINGS.forEach(([w, sh, lg], i) => {
       const cell = D.cells[`${c}|${w}`]; if (!cell || !cell.carry) return;
-      const m = cell.carry.mean, e = cell.carry.sd || 0, y = 3 + i * 6;
+      const m = cell.carry.mean, e = cell.carry.sd || 0, y = 2 + i * 5;
       if (e) h += `<span class="spread s${i}" style="left:${pc(m - e)};width:calc(${pc(m + e)} - ${pc(m - e)});top:${y + 2}px"></span>`;
       h += `<span class="dot s${i}" style="left:${pc(m)};top:${y}px" title="${esc(c)} · ${lg}: ≈${f0(m)} yd carry"></span>`;
     });
@@ -2383,7 +2451,8 @@ function renderDist() {
   h += `<div class="lad ticks"><span class="ll"></span><div class="lt">${Array.from({ length: scale / step + 1 }, (_, i) => `<span style="left:${pc(i * step)}">${i * step}</span>`).join("")}</div></div></div>`;
   h += `<div class="legend">${SWINGS.map(([w, sh, lg], i) => `<span><i class="dot s${i}"></i>${lg}</span>`).join("")}<span class="muted">bar: ± spread · yd</span></div></div>`;
   // the table: tap a cell for everything behind it
-  h += `<div class="tablewrap"><table class="dist"><thead><tr><th>Club</th><th>Full</th><th title="Full-swing carry difference from the next longer club">Gap</th><th>⅔</th><th>⅓</th></tr></thead><tbody>`;
+  const others = SWINGS.filter(([w]) => w !== "full");
+  h += `<div class="tablewrap"><table class="dist"><thead><tr><th>Club</th><th>Full</th><th title="Full-swing carry difference from the next longer club">Gap</th>${others.map(([w, sh, lg]) => `<th title="${lg}">${sh}</th>`).join("")}</tr></thead><tbody>`;
   let prevFull = null;
   for (const c of D.clubs) {
     const cellTd = w => {
@@ -2393,7 +2462,7 @@ function renderDist() {
       return `<td class="dc${distSel === k ? " sel" : ""}" data-k="${esc(k)}">${cell.carry ? `<b>≈${f0(cell.carry.mean)}</b>` : `<b>–</b>`}<small>${cell.used.length}${cell.carry && cell.carry.sd != null ? ` · ±${f0(cell.carry.sd)}` : ""}${out ? ` · ${out} out` : ""}</small></td>`;
     };
     const full = D.cells[`${c}|full`].carry, gap = full && prevFull != null ? prevFull - full.mean : null;
-    h += `<tr><td>${esc(SHORT[c] || c)}</td>${cellTd("full")}<td class="gap">${gap != null ? f0(gap) : ""}</td>${cellTd("2/3")}${cellTd("1/3")}</tr>`;
+    h += `<tr><td>${esc(SHORT[c] || c)}</td>${cellTd("full")}<td class="gap">${gap != null ? f0(gap) : ""}</td>${others.map(([w]) => cellTd(w)).join("")}</tr>`;
     if (full) prevFull = full.mean;
   }
   h += `</tbody></table></div><div class="note">≈ average carry in yards, then the number of shots and the spread. Gap is how much shorter each full swing is than the club above. ${D.empty.length ? `No shots yet with ${D.empty.map(c => esc(SHORT[c] || c)).join(", ")}.` : ""}</div>`;
@@ -2564,7 +2633,8 @@ function record(ball, cd, src) {
   if (!ball || !(ball.speedMph > 0)) return;
   const raws = src === "manual" ? [] : pending; if (src !== "manual") pending = [];
   const s = { id: uid(), ts: Date.now(), player: S.current, club: curClub(), swing: curSwing(), excluded: false, src,
-    ball: { speedMph: +ball.speedMph, vla: +ball.vla, hla: +ball.hla || 0, spinRpm: +ball.spinRpm || 0, axisDeg: +ball.axisDeg || 0, backSpin: null, sideSpin: null }, cd: cd || null, app: null, target: null };
+    ball: { speedMph: +ball.speedMph, vla: +ball.vla, hla: +ball.hla || 0, spinRpm: +ball.spinRpm || 0, axisDeg: +ball.axisDeg || 0, backSpin: null, sideSpin: null }, cd: cd || null, app: null, target: null,
+    where: aim() === "train" ? "train" : "range" };
   const pkt = raws.find(r => r.kind === "shot");
   if (pkt) { s.ball.backSpin = pkt.decoded.fields.backSpinRpm; s.ball.sideSpin = pkt.decoded.fields.sideSpinRpm; }
   const a = aimNow(), r = a && a.r;
@@ -2652,6 +2722,7 @@ function hubEvent(ev) {
   } else if (ev.type === "session") {
     const s = ev.session || {};
     followSquare = s.followSquare !== false;
+    if (s.activity) toldActivity = s.activity === (aim() === "train" ? "train" : "range") ? s.activity : null; // another app in front: tell again next time
     if (s.player && s.player !== S.current && S.players.some(p => p.id === s.player)) { S.current = s.player; selId = null; anim = null; toast(`${me().name} is up`); }
     renderAll();
   } else if (ev.type === "reload") reloadSoon();
@@ -3001,6 +3072,7 @@ async function reload() {
     if (servedByRelay) fetch("/status").then(r => r.json()).then(j => { if (j.omniRelay) connectRelay(selfRelay()); }).catch(() => {});
     if (hub()) findBrowserCopy().catch(() => {});
     remote();
+    tellActivity(true);
   } catch (e) { console.error(e); $("loading").textContent = "Couldn't start: " + e.message; }
 })();
 // The Omni connector (Claude, on a voice call) can see and work this page when it's opened from the NUC
@@ -3023,6 +3095,18 @@ function remote() {
   });
   OmniRemote.start("Range Lab", { nuc: hub() });
 }
+// The NUC tags each shot it records with the app in use: Range Lab says so whenever it's in front, and
+// whether that's practice or Train (the Omni connector can then find "my Train shots" or "game shots").
+let toldActivity = null;
+function tellActivity(force = false) {
+  if (!hub() || document.hidden || !S.players.length) return;
+  const a = aim() === "train" ? "train" : "range";
+  if (!force && a === toldActivity) return;
+  toldActivity = a;
+  store.setSession({ activity: a }).catch(() => { toldActivity = null; });
+}
+addEventListener("focus", () => tellActivity(true));
+document.addEventListener("visibilitychange", () => { if (!document.hidden) tellActivity(true); });
 addEventListener("pagehide", () => { store && store.flush && store.flush(); });
 document.addEventListener("visibilitychange", () => { if (document.hidden && store && store.flush) store.flush(); });
 window.rangeLab = { S, get store() { return store; }, get info() { return storeInfo; }, record, calc, solve, BANDS, RawTap, live, distData, grouping, viewRect, get browserCopy() { return browserCopy; }, train: () => trainApi, aim: () => aimNow(), aimFrom };
@@ -3304,6 +3388,7 @@ function setAim(t) {
   if (!p || t === aimMode()) return;
   p.settings = { ...(p.settings || {}), aim: t };
   persistPlayer(p);
+  tellActivity(); // shots are tagged practice or Train
 }
 
 // The numbers that go with what you picked: the shared model's aim (OmniModel.aimFor), which the Omni

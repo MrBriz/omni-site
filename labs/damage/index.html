@@ -73,6 +73,1030 @@
   Groups of four tee off every ten minutes. Each player's skill sets their drive and scatter, and their divot habits match the Divot Lab presets. Their tidiness is the chance they mend their own marks, and tidy players also fix someone else's. Wet ground means bigger, muddier divots and deeper pitch marks. The greenkeeper's morning round rakes the bunkers, fills half the open divots and repairs some pitch marks.
 </div></div>
 <!-- omni-shared: built in from shared/ by shared/embed.py; edit shared/, not this copy -->
+<script data-omni-shared="engine">
+// Omni Golf engine pieces, copied verbatim from Omni Golf v4 (game/v4/index.html).
+// Only formatting differs, so the Range Lab runs exactly the game's ball flight and Omni code.
+// 23 Nov 2026: the turf rows of the ground table (tee, fairway, first cut, rough, deep rough) were
+// changed in both, to match the Square app's run: see tests/square_2026-11-23.json and
+// test_range_vs_square.py. The fairway was fitted to 18 iron shots (bounce e 0.25 -> 0.16, crater
+// 16 -> 26 deg, rolling resistance 3.2 -> 8 m/s2); the other turf rows were scaled by the same
+// ratios so they stay slower than the fairway. Fringe, green and bunker are unchanged.
+const OG = (() => {
+  var ZS, Ic, we, J0, cf, j0, zi, In, ki, de, Fs, Ui, Wn, Fi;
+  ((ZS = (2 * Math.PI) / 60),
+    (Ic = 9.80665),
+    (we = { m: 0.04593, r: 0.021335, k: 0.4 }),
+    (J0 = Math.PI * we.r * we.r),
+    (cf = { cdLo: 0.5, cdHigh: 0.205, cdSlope: -0.002, cdSpin: 0.315, a: 0.495, b: 0.483, cm: 0.0121 }),
+    (j0 = {}));
+  zi = {
+    tee: { name: "Tee", e: 0.16, mu: 0.45, mk: 0.35, crater: 26, roll: 8 },
+    fairway: { name: "Fairway", e: 0.16, mu: 0.45, mk: 0.35, crater: 26, roll: 8 },
+    semi: { name: "First cut", e: 0.141, mu: 0.5, mk: 0.4, crater: 24.4, roll: 11.25 },
+    rough: { name: "Rough", e: 0.102, mu: 0.6, mk: 0.5, crater: 19.5, roll: 17.5 },
+    deep: { name: "Deep rough", e: 0.064, mu: 0.7, mk: 0.6, crater: 16.2, roll: 27.5 },
+    fringe: { name: "Fringe", e: 0.24, mu: 0.45, mk: 0.35, crater: 17, roll: 1.4 },
+    green: { name: "Green", e: 0.24, mu: 0.42, mk: 0.3, crater: 18, roll: QS(10) },
+    sand: { name: "Bunker", e: 0.05, mu: 0.9, mk: 0.8, crater: 0, roll: 12 },
+    water: { name: "Water" },
+    ob: { name: "Out of bounds" },
+  };
+  ((In = (n, t) => [n[0] + t[0], n[1] + t[1], n[2] + t[2]]),
+    (ki = (n, t) => [n[0] - t[0], n[1] - t[1], n[2] - t[2]]),
+    (de = (n, t) => [n[0] * t, n[1] * t, n[2] * t]),
+    (Fs = (n, t) => n[0] * t[0] + n[1] * t[1] + n[2] * t[2]),
+    (Ui = (n, t) => [n[1] * t[2] - n[2] * t[1], n[2] * t[0] - n[0] * t[2], n[0] * t[1] - n[1] * t[0]]),
+    (Wn = (n) => Math.hypot(n[0], n[1], n[2])),
+    (Fi = (n) => {
+      let t = Wn(n);
+      return t > 1e-12 ? de(n, 1 / t) : [0, 0, 0];
+    }));
+  var Vc, Cg, A2, R2, C2, Sf, Ef, P2, ya, $n;
+  ((Vc = (n) => `8660${n}-6b7e-439a-bdd1-489a3213e9bb`),
+    (Cg = Vc("1001")),
+    (A2 = Vc("2101")),
+    (R2 = Vc("2102")),
+    (C2 = Vc("2003")),
+    (Sf = {
+      DR: [1, 0],
+      W3: [3, 1],
+      H4: [14, 1],
+      I5: [5, 2],
+      I6: [6, 2],
+      I7: [7, 2],
+      I8: [8, 2],
+      I9: [9, 2],
+      PW: [10, 2],
+      GW: [11, 2],
+      SW: [12, 2],
+      LW: [13, 2],
+      PT: [1, 3],
+    }));
+  ((Ef = 2.236936),
+    (P2 = { 1: "idle", 2: "starting", 3: "looking for the ball", 4: "ready", 5: "shot", 6: "done" }));
+  ya = (n, t, e, i) => (
+    i({ step: n }),
+    Promise.race([
+      t,
+      new Promise((s, r) =>
+        setTimeout(() => {
+          let a = new Error(`timeout: ${n}`);
+          ((a.name = "TimeoutError"), (a.step = n), r(a));
+        }, e),
+      ),
+    ])
+  );
+  $n = (n) => {
+    if (n == null) return null;
+    if (typeof n == "number") return n;
+    let t = /^\s*(-?[\d.]+)\s*([a-z%/]*)/i.exec(String(n));
+    if (!t) return null;
+    let e = parseFloat(t[1]),
+      i = t[2].toLowerCase();
+    return i === "mph" ? e / Ef : i === "kph" || i === "kmh" ? e / 3.6 : e;
+  };
+  var Dn = {
+    Driver: { launch: 12.6, spin: 2900, smash: 1.44, club: 94 },
+    "3 wood": { launch: 11.5, spin: 3800, smash: 1.42, club: 89 },
+    "4 hybrid": { launch: 13.5, spin: 4500, smash: 1.37, club: 84 },
+    "5 iron": { launch: 15, spin: 5300, smash: 1.32, club: 78 },
+    "6 iron": { launch: 16.5, spin: 5900, smash: 1.31, club: 76 },
+    "7 iron": { launch: 18, spin: 6600, smash: 1.3, club: 74 },
+    "8 iron": { launch: 20, spin: 7300, smash: 1.28, club: 72 },
+    "9 iron": { launch: 22.5, spin: 8e3, smash: 1.25, club: 70 },
+    PW: { launch: 25, spin: 8700, smash: 1.22, club: 68 },
+    "Gap wedge": { launch: 27.5, spin: 9200, smash: 1.2, club: 66 },
+    "Sand wedge": { launch: 30, spin: 9600, smash: 1.18, club: 64 },
+    "Lob wedge": { launch: 33, spin: 9900, smash: 1.15, club: 62 },
+    Putter: { launch: 1.5, spin: 0, smash: 1, club: 0 },
+  };
+  function JS({ tempC: n = 15, pressureHPa: t = 1013.25, humidity: e = 0.5 } = {}) {
+    let i = n + 273.15,
+      s = 6.1078 * Math.pow(10, (7.5 * n) / (n + 237.3)) * 100,
+      r = e * s,
+      o = (t * 100 - r) / (287.058 * i) + r / (461.495 * i),
+      l = (1458e-9 * Math.pow(i, 1.5)) / (i + 110.4);
+    return { rho: o, nu: l / o };
+  }
+  function e2(n, t) {
+    if (!n.windSpeed) return [0, 0, 0];
+    let e = 0.03,
+      i = Math.max(t, e * 1.01),
+      s = (n.windSpeed * Math.log(i / e)) / Math.log(10 / e);
+    return [Math.sin(n.windDir) * s, 0, Math.cos(n.windDir) * s];
+  }
+  function KS(n, t, e = cf) {
+    let i = e.cdHigh + e.cdSlope * -0.4;
+    return (
+      (n <= 35e3
+        ? e.cdLo
+        : n >= 6e4
+          ? e.cdHigh + e.cdSlope * ((n - 1e5) / 1e5)
+          : e.cdLo + ((n - 35e3) / 25e3) * (i - e.cdLo)) +
+      e.cdSpin * t
+    );
+  }
+  function jS(n, t = cf) {
+    return t.a * Math.pow(Math.max(n, 0), t.b);
+  }
+  function Pc(n, t, e) {
+    let i = [n[3], n[4], n[5]],
+      s = [n[6], n[7], n[8]],
+      r = ki(i, e2(t, n[1] - e)),
+      a = Wn(r),
+      o = Wn(s),
+      l = (a * 2 * we.r) / t.nu,
+      c = a > 1e-6 ? (o * we.r) / a : 0,
+      h = 0.5 * t.rho * J0 * a * a,
+      d = KS(l, c, t.aero),
+      u = jS(c, t.aero),
+      f = [0, -Ic, 0];
+    if (a > 1e-6) {
+      f = In(f, de(r, (-h * d) / (we.m * a)));
+      let x = Ui(s, r),
+        m = Wn(x);
+      m > 1e-9 && (f = In(f, de(x, (h * u) / (we.m * m))));
+    }
+    let g = o > 1e-9 ? (we.r * t.rho * J0 * t.aero.cm * c * a * a) / (we.k * we.m * we.r * we.r) / o : 0;
+    return [i[0], i[1], i[2], f[0], f[1], f[2], -g * s[0], -g * s[1], -g * s[2]];
+  }
+  function lf(n, t, e, i) {
+    let s = Pc(n, e, i),
+      r = n.map((d, u) => d + 0.5 * t * s[u]),
+      a = Pc(r, e, i),
+      o = n.map((d, u) => d + 0.5 * t * a[u]),
+      l = Pc(o, e, i),
+      c = n.map((d, u) => d + t * l[u]),
+      h = Pc(c, e, i);
+    return n.map((d, u) => d + (t / 6) * (s[u] + 2 * a[u] + 2 * l[u] + h[u]));
+  }
+  function i2(n, t, e, i) {
+    let s = Wn(n),
+      r = Fs(n, e),
+      a = ki(n, de(e, r)),
+      o = Fi(a),
+      l = ((i.crater * Math.PI) / 180) * Math.min(1, Math.abs(r) / 20),
+      c = Fi(ki(de(e, Math.cos(l)), de(o, Math.sin(l)))),
+      h = Fs(n, c);
+    if (h >= 0) return { v: n, w: t };
+    let d = i.e * Math.max(0.35, 1 - Math.abs(h) / 45),
+      u = we.m,
+      f = we.r,
+      g = we.k * u * f * f,
+      x = -u * (1 + d) * h,
+      m = de(c, -f),
+      p = In(n, Ui(t, m)),
+      v = ki(p, de(c, Fs(p, c))),
+      y = Wn(v) / (1 / u + (f * f) / g),
+      w = Math.min(i.mu * x, y),
+      b = ki(de(c, x), de(Fi(v), w)),
+      E = In(n, de(b, 1 / u)),
+      T = In(t, de(Ui(m, b), 1 / g));
+    return { v: E, w: T };
+  }
+  function n2(n, t, e) {
+    let [i, s] = n.grad(t, e);
+    return Fi([-i, 1, -s]);
+  }
+  function K0(n) {
+    let t = zi[n],
+      e = j0[n];
+    return !t || !e || n === "water"
+      ? t
+      : {
+          ...t,
+          e: t.e * e.e,
+          mu: t.mu * e.mu,
+          mk: t.mk * e.mu,
+          crater: t.crater * e.crater,
+          roll: t.roll * e.roll,
+        };
+  }
+  function QS(n) {
+    return (1.83 * 1.83) / (2 * n * 0.3048);
+  }
+  function t2(n) {
+    let t = n >>> 0;
+    return () => {
+      t = (t + 1831565813) >>> 0;
+      let e = t;
+      return (
+        (e = Math.imul(e ^ (e >>> 15), e | 1)),
+        (e ^= e + Math.imul(e ^ (e >>> 7), e | 61)),
+        ((e ^ (e >>> 14)) >>> 0) / 4294967296
+      );
+    };
+  }
+  function ks(n, t) {
+    let { course: e } = t,
+      i = { ...JS(t.weather), aero: cf, windSpeed: 0, windDir: 0, ...(t.env || {}) },
+      s = t.start.slice(),
+      r = t.aimYaw || 0,
+      a = [0, 1, 0],
+      o = [Math.sin(r), 0, Math.cos(r)],
+      l = Ui(o, a),
+      c = n.speedMph * 0.44704,
+      h = (n.vla * Math.PI) / 180,
+      d = (n.hla * Math.PI) / 180,
+      u = In(
+        In(de(o, c * Math.cos(h) * Math.cos(d)), de(l, c * Math.cos(h) * Math.sin(d))),
+        de(a, c * Math.sin(h)),
+      ),
+      f = Fi(u),
+      g = Fi(Ui(f, a)),
+      x = Fi(Ui(g, f)),
+      m = (n.axisDeg * Math.PI) / 180,
+      p = n.spinRpm * ZS,
+      v = ki(de(g, p * Math.cos(m)), de(x, p * Math.sin(m))),
+      _ = [],
+      y = { samples: _, result: "rest", carry: 0, total: 0, apex: 0, landAngle: 0, offline: 0, hang: 0 },
+      w = 0,
+      b = [s[0], e.height(s[0], s[2]) + we.r, s[2]],
+      E = () => _.push([w, b[0], b[1], b[2]]);
+    E();
+    let T = n.speedMph < 15 && n.vla < 6,
+      M = null,
+      S = T ? "roll" : "fly";
+    T &&
+      ((u = [u[0], 0, u[2]]),
+      (v = Ui(u, [0, 1, 0])
+        .map((V) => V / we.r)
+        .map((V) => -V)));
+    let C = t.dt || 0.001,
+      F = new Set(),
+      D = 0,
+      U = 0,
+      H = b[1];
+    for (let V = 0; V < 2e5; V++)
+      if (S === "fly") {
+        let z = e.height(b[0], b[2]),
+          Q = [...b, ...u, ...v],
+          K = lf(Q, C, i, z),
+          ht = C,
+          _t = e.height(K[0], K[2]);
+        if (K[1] - we.r <= _t && K[4] < 0) {
+          let yt = 0,
+            Z = C;
+          for (let It = 0; It < 24; It++) {
+            let Lt = 0.5 * (yt + Z),
+              Bt = lf(Q, Lt, i, z);
+            Bt[1] - we.r <= e.height(Bt[0], Bt[2]) ? (Z = Lt) : (yt = Lt);
+          }
+          ((ht = Z),
+            (K = lf(Q, ht, i, z)),
+            (b = [K[0], K[1], K[2]]),
+            (u = [K[3], K[4], K[5]]),
+            (v = [K[6], K[7], K[8]]),
+            (w += ht));
+          let rt = e.surface(b[0], b[2]);
+          if (
+            !M &&
+            ((M = b.slice()),
+            (y.landState = { p: b.slice(), v: u.slice(), w: v.slice(), t: w }), // where it first lands: position, velocity, spin (m, m/s, rad/s), time
+            (y.hang = w),
+            (y.landAngle = (Math.atan2(-u[1], Math.hypot(u[0], u[2])) * 180) / Math.PI),
+            (y.landSpeed = Math.hypot(u[0], u[1], u[2])),
+            t.carryOnly)
+          ) {
+            E();
+            break;
+          }
+          if ((E(), rt === "water" || rt === "ob")) {
+            y.result = rt;
+            break;
+          }
+          let gt = n2(e, b[0], b[2]),
+            ct = i2(u, v, gt, K0(rt));
+          ((u = ct.v),
+            (v = ct.w),
+            U++,
+            (b[1] = e.height(b[0], b[2]) + we.r + 1e-4),
+            (Fs(u, gt) < 0.7 || U > 12) && ((u = ki(u, de(gt, Fs(u, gt)))), (S = "roll")));
+          continue;
+        }
+        if (
+          ((b = [K[0], K[1], K[2]]), (u = [K[3], K[4], K[5]]), (v = [K[6], K[7], K[8]]), (w += ht), e.treeHit)
+        ) {
+          let yt = e.treeHit(b[0], b[1], b[2]);
+          if (yt && !F.has(yt.id)) {
+            F.add(yt.id);
+            let Z = t2(yt.id * 7919 + Math.round(w * 1e3)),
+              rt = 0.12 + 0.3 * Z(),
+              gt = Wn(u) * rt,
+              ct = Fi([u[0] * rt + (Z() - 0.5) * 6, u[1] * rt - Z() * 4, u[2] * rt + (Z() - 0.5) * 6]);
+            ((u = de(ct, gt)), (v = de(v, 0.3)), (y.treeHits = (y.treeHits || 0) + 1));
+          }
+        }
+        if (((y.apex = Math.max(y.apex, b[1] - H)), (D += ht), D >= 0.01 && ((D = 0), E()), w > 30)) break;
+      } else {
+        let Q = e.surface(b[0], b[2]);
+        if (Q === "water" || Q === "ob") {
+          ((y.result = Q), E());
+          break;
+        }
+        let K = K0(Q),
+          [ht, _t] = e.grad(b[0], b[2]),
+          yt = Fi([-ht, 1, -_t]);
+        u = ki(u, de(yt, Fs(u, yt)));
+        let Z = de(yt, -we.r),
+          rt = In(u, Ui(v, Z)),
+          gt = Wn(rt),
+          ct = ki([0, -Ic, 0], de(yt, Fs([0, -Ic, 0], yt)));
+        if (gt > 0.05) {
+          let It = de(Fi(rt), -K.mk * Ic * we.m);
+          ((u = In(u, de(In(de(It, 1 / we.m), ct), 0.002))),
+            (v = In(v, de(Ui(Z, It), 0.002 / (we.k * we.m * we.r * we.r)))));
+        } else {
+          let It = Wn(u),
+            Lt = de(ct, 5 / 7);
+          (It > 1e-4 && (Lt = In(Lt, de(u, -K.roll / It))),
+            (u = In(u, de(Lt, 0.002))),
+            (v = de(Ui(yt, u), 1 / we.r)));
+          let Bt = (5 / 7) * Wn(ct);
+          Wn(u) < 0.02 && Bt < K.roll * 1.05 && (u = [0, 0, 0]);
+        }
+        let Mt = b.slice();
+        if (
+          ((b = In(b, de(u, 0.002))),
+          (b[1] = e.height(b[0], b[2]) + we.r),
+          (w += 0.002),
+          (D += 0.002),
+          D >= 0.02 && ((D = 0), E()),
+          e.pin && Q === "green")
+        ) {
+          let It = Math.hypot(b[0] - e.pin.x, b[2] - e.pin.z),
+            Lt = Math.hypot(Mt[0] - e.pin.x, Mt[2] - e.pin.z);
+          if (Math.min(It, Lt) < 0.054 && Wn(u) < 1.6) {
+            ((y.result = "holed"), (b = [e.pin.x, e.height(e.pin.x, e.pin.z) - 0.05, e.pin.z]), E());
+            break;
+          }
+        }
+        if (Wn(u) === 0 || w > 60) {
+          E();
+          break;
+        }
+      }
+    let O = (V) => Math.hypot(V[0] - s[0], V[2] - s[2]);
+    return (
+      (y.carry = O(M || b)),
+      (y.total = O(b)),
+      (y.offline = Fs(ki(b, s), l)),
+      (y.final = b),
+      (y.landing = M),
+      (y.lie = y.result === "rest" ? e.surface(b[0], b[2]) : y.result),
+      (y.duration = w),
+      y
+    );
+  }
+  function tg(n) {
+    let t = n.TotalSpin,
+      e = n.SpinAxis;
+    return (
+      t == null &&
+        n.BackSpin !== void 0 &&
+        ((t = Math.hypot(n.BackSpin, n.SideSpin || 0)),
+        (e = (Math.atan2(n.SideSpin || 0, n.BackSpin) * 180) / Math.PI)),
+      { speedMph: +n.Speed, vla: +n.VLA, hla: +n.HLA || 0, spinRpm: +t || 0, axisDeg: +e || 0 }
+    );
+  }
+  function Tf(n) {
+    if (!n) return "DR";
+    let t = {
+      Driver: "DR",
+      "3 wood": "W3",
+      "4 hybrid": "H4",
+      PW: "PW",
+      "Gap wedge": "GW",
+      "Sand wedge": "SW",
+      "Lob wedge": "LW",
+      Putter: "PT",
+    }[n];
+    if (t) return t;
+    let e = /^([5-9]) iron/.exec(n);
+    return e ? `I${e[1]}` : "DR";
+  }
+  function Pg(n, t) {
+    let e = {
+        speedMph: n.ballSpeedMps * Ef,
+        vla: n.vla,
+        hla: n.hla,
+        spinRpm: n.totalSpin,
+        axisDeg: n.spinAxis,
+      },
+      i = t
+        ? {
+            Speed: t.clubSpeedMps != null ? t.clubSpeedMps * Ef : void 0,
+            Path: t.path,
+            FaceToTarget: t.face,
+            AngleOfAttack: t.attack,
+            Loft: t.dynLoft,
+            HorizontalFaceImpact: t.impactHmm,
+            VerticalFaceImpact: t.impactVmm,
+            Smash: t.smash,
+          }
+        : null;
+    return { shot: e, club: i };
+  }
+  async function Ig({ onShot: n, onState: t, club: e = "DR", leftHanded: i = !1 }) {
+    if (!navigator.bluetooth) throw new Error("no-bluetooth");
+    let s = await ya(
+        "choosing the Omni",
+        navigator.bluetooth.requestDevice({
+          filters: [{ namePrefix: "SquareGolf" }, { namePrefix: "SGO" }],
+          optionalServices: [Cg],
+        }),
+        9e4,
+        t,
+      ),
+      r = await ya("connecting", s.gatt.connect(), 2e4, t),
+      a = await ya("finding the Omni service", r.getPrimaryService(Cg), 15e3, t),
+      o = await ya("opening commands", a.getCharacteristic(A2), 1e4, t),
+      l = await ya("opening shot data", a.getCharacteristic(R2), 1e4, t),
+      c = null;
+    try {
+      c = JSON.parse(new TextDecoder().decode(await (await a.getCharacteristic(C2)).readValue()));
+    } catch {}
+    let h = 0,
+      d = Promise.resolve(),
+      u = (b, ...E) =>
+        (d = d
+          .then(() => {
+            let T = new Uint8Array(9);
+            return (
+              (T[1] = b),
+              (T[2] = h++ & 255),
+              E.forEach((M, S) => (T[3 + S] = M)),
+              o.writeValueWithResponse ? o.writeValueWithResponse(T) : o.writeValue(T)
+            );
+          })
+          .catch(() => {})),
+      f = "",
+      g = 0,
+      x = null,
+      m = !1,
+      p = 0,
+      v = (b) => {
+        ((m = !1), clearTimeout(p), x && n(Pg(x, b)), (x = null));
+      };
+    (l.addEventListener("characteristicvaluechanged", (b) => {
+      let E = b.target.value;
+      if (E.byteLength === 0) {
+        s.gatt.disconnect();
+        return;
+      }
+      let T = new Uint8Array(E.buffer, E.byteOffset, E.byteLength),
+        M = T.join(","),
+        S = performance.now();
+      if (M === f && S - g < 1e3) return;
+      if (((f = M), (g = S), T[0] === 145)) {
+        t({ battery: T[1] });
+        return;
+      }
+      if (T[0] !== 17) return;
+      let C = (F) => E.getInt16(F, !0);
+      switch (T[1]) {
+        case 1:
+          t({ ready: T[3] === 1 || T[3] === 2, detected: T[4] === 1 });
+          break;
+        case 3:
+          t({ state: P2[T[3]] || "" });
+          break;
+        case 2: {
+          if (
+            ((x = {
+              ballSpeedMps: C(3) / 100,
+              vla: C(5) / 100,
+              hla: C(7) / 100,
+              totalSpin: C(9),
+              spinAxis: -C(11) / 100,
+              backSpin: C(13),
+              sideSpin: -C(15),
+            }),
+            x.totalSpin === 0 && e !== "PT")
+          ) {
+            ((x = null), t({ misread: !0 }));
+            break;
+          }
+          ((m = !0), u(135), (p = setTimeout(() => m && v(null), 1500)));
+          break;
+        }
+        case 7: {
+          if (!m) break;
+          let F = T[2],
+            D = (U) => {
+              let H = C(3 + 2 * U);
+              return (F >> U) & 1 && H !== -1 ? H / 100 : null;
+            };
+          v({
+            path: D(0),
+            face: D(1),
+            attack: D(2),
+            dynLoft: D(3),
+            impactHmm: D(4),
+            impactVmm: D(5),
+            clubSpeedMps: D(6),
+            smash: D(7),
+          });
+          break;
+        }
+      }
+    }),
+      await ya("subscribing to shots", l.startNotifications(), 1e4, t),
+      t({ step: "arming" }),
+      u(131));
+    let _ = (b, E = i) => {
+      if (!Sf[b]) return;
+      e = b;
+      let [T, M] = Sf[b];
+      return u(130, T, M, E ? 1 : 0);
+    };
+    (await _(e), await u(129, 1, 17));
+    let y = setInterval(() => u(131), 5e3),
+      w = !1;
+    return (
+      s.addEventListener("gattserverdisconnected", () => {
+        (clearInterval(y), w || t({ disconnected: !0 }));
+      }),
+      {
+        kind: "bluetooth",
+        name: s.name || "Omni",
+        firmware: c,
+        setClub: _,
+        disconnect: async () => {
+          ((w = !0), clearInterval(y), await u(129, 0, 17));
+          try {
+            s.gatt.disconnect();
+          } catch {}
+        },
+      }
+    );
+  }
+  function Lg(n, { onShot: t, onState: e }) {
+    let i = new WebSocket(n),
+      s = new Map(),
+      r = !1;
+    return (
+      (i.onopen = () => e({ ready: !0 })),
+      (i.onclose = () => {
+        r || e({ disconnected: !0 });
+      }),
+      (i.onerror = () => e({ error: !0 })),
+      (i.onmessage = ({ data: o }) => {
+        let l;
+        try {
+          l = JSON.parse(o);
+        } catch {
+          return;
+        }
+        let c = l.key && (l.key.shot_id ?? l.key.id);
+        if (c == null) return;
+        let h = s.get(c) || {};
+        if ((s.set(c, h), l.kind === "shot.launch")) h.launch = l.launch;
+        else if (l.kind === "shot.club") h.club = l.club;
+        else if (l.kind === "shot.finished" && h.launch) {
+          let d = h.launch,
+            u = h.club || {},
+            f = {
+              ballSpeedMps: $n(d.launch_speed),
+              vla: $n(d.launch_elevation),
+              hla: $n(d.launch_azimuth) || 0,
+              totalSpin: $n(d.total_spin_rpm) ?? Math.hypot($n(d.backspin_rpm) || 0, $n(d.sidespin_rpm) || 0),
+              spinAxis: $n(d.spin_axis) || 0,
+            };
+          (f.ballSpeedMps > 0 &&
+            t(
+              Pg(
+                f,
+                h.club
+                  ? {
+                      clubSpeedMps: $n(u.club_speed),
+                      path: $n(u.path),
+                      face: $n(u.face_angle),
+                      attack: $n(u.attack_angle),
+                      dynLoft: $n(u.dynamic_loft),
+                      smash: $n(u.smash_factor),
+                    }
+                  : null,
+              ),
+            ),
+            s.delete(c));
+        }
+        s.size > 20 && s.delete(s.keys().next().value);
+      }),
+      {
+        kind: "frp",
+        name: "flighthook",
+        setClub: (o) => {
+          i.readyState === 1 &&
+            Sf[o] &&
+            i.send(
+              JSON.stringify({ kind: "golfer.select", from: "omni-golf", ref: `sel-${Date.now()}`, club: o }),
+            );
+        },
+        disconnect: async () => {
+          ((r = !0), i.close());
+        },
+      }
+    );
+  }
+  return {
+    simulate: ks,
+    fromGSPro: tg,
+    connectOmni: Ig,
+    connectFRP: Lg,
+    clubCode: Tf,
+    OMNI_CLUBS: Sf,
+    CLUB_TYPICAL: Dn,
+    SURFACES: zi,
+    air: JS,
+  };
+})();
+</script>
+<script data-omni-shared="model">
+// The Omni shared model: the one place every Omni app gets its clubs, golfer levels, a player's club
+// numbers, units, distances and ball flight from. Each app has this file built in (shared/README.md
+// says how), and tests/test_shared.py fails if any app's copy differs from it. Ball flight is the
+// physics engine (shared/engine.js, `OG`), which has to be loaded first.
+//
+// Data (players, their bags and own launch angles, shots) lives in one place too: the NUC's database,
+// which every app opened from the NUC reads and writes (relay/omni_relay/data.py).
+//
+//   OmniModel.YD, FT, MPS                 units: a yard and a foot in metres; mph per m/s
+//   OmniModel.CLUBS                       the clubs in a bag, longest first (the putter isn't one)
+//   OmniModel.impactClubs(), soleClubs(), tour(club)   the labs' club tables and tour shots; BEAUFORT
+//   OmniModel.SHORT[club], SPECS[club]    a club's short label, and its loft and head details
+//   OmniModel.LEVELS                      typical full-swing numbers by level of golfer (below)
+//   OmniModel.numbers(player, club)       a player's full-swing numbers for a club: their level's,
+//                                         with their own launch angle if they've set one
+//   OmniModel.fullCarry(player, club)     how far their full swing with it carries, flat and still
+//   OmniModel.aimOf(player), practiceTarget(player, club)   practice or Train; the target a shot counts for
+//   OmniModel.TRAIN, trainOf(player), trainWant(settings)    Train's games, a player's game and its target
+//   OmniModel.fly(ball, opts)             a ball's flight, in yards (carry, total, apex, side, ...)
+//   OmniModel.flightOf(shot)              a recorded shot's flight (cached per shot); flights(shots)
+//   OmniModel.SWINGS                      full, ⅔, ⅓, pitch, chip: what a player says they're hitting
+//   OmniModel.OMNI_CODES[club], teeOf(shot)   the Omni's club codes; a shot's tee height (mm)
+//   OmniModel.distances(player, shots, since)   per club and swing averages, as the Distances tab
+//   OmniModel.aimFor(player, club, want, opts)   all the numbers that go with a target (the aim)
+//   OmniModel.yd(m), metres(yd)           conversions; ydBetween(a, b): ground distance, [x, z] in m
+const OmniModel = (() => {
+  // ------------------------------------------------------------------ units
+  const YD = 0.9144, FT = 0.3048, MPS = 2.236936; // m per yard, m per foot, mph per m/s (as the engine)
+  const yd = m => m / YD, metres = y => y * YD;
+  const ydBetween = (a, b) => Math.hypot(b[0] - a[0], b[1] - a[1]) / YD;
+
+  // ------------------------------------------------------------------ clubs
+  const ORDER = ["Driver", "3 wood", "4 hybrid", "5 iron", "6 iron", "7 iron", "8 iron", "9 iron", "PW", "Gap wedge", "Sand wedge", "Lob wedge"];
+  const CLUBS = ORDER, PUTTER = "Putter";
+  const SHORT = { "Driver": "Driver", "3 wood": "3W", "4 hybrid": "4H", "5 iron": "5i", "6 iron": "6i", "7 iron": "7i", "8 iron": "8i", "9 iron": "9i",
+    "PW": "PW", "Gap wedge": "GW", "Sand wedge": "SW", "Lob wedge": "LW", "Putter": "Putter" };
+  // Loft, and for the clubs the Launch and Divot labs model: how the head meets the ball (dyn: dynamic
+  // loft, aoa: attack angle, M: head mass kg, e: face restitution, spinK: spin scale) and the sole
+  // (sole: sole width m, bounce deg, R: sole radius m, width: face width m, lean: shaft lean deg, camber).
+  // Club speed isn't here: it comes from the golfer's level (LEVELS) or the player.
+  const SPECS = {
+    "Driver": { loft: 10.5, dyn: 14, aoa: -0.9, M: 0.215, e: 0.85, spinK: 0.62, from: "tee" },
+    "3 wood": { loft: 15, sole: 0.04, bounce: 1, R: 1.6, width: 0.075, lean: 0, camber: 0.08 },
+    "4 hybrid": { loft: 22 },
+    "5 iron": { loft: 26, dyn: 17.5, aoa: -3.6, M: 0.27, e: 0.765, spinK: 1, sole: 0.017, bounce: 3, R: 1.5, width: 0.062, lean: 6, camber: 0.3 },
+    "6 iron": { loft: 30 },
+    "7 iron": { loft: 34, dyn: 23.2, aoa: -4.3, M: 0.29, e: 0.76, spinK: 1, sole: 0.02, bounce: 4, R: 1.45, width: 0.062, lean: 6, camber: 0.3 },
+    "8 iron": { loft: 38 },
+    "9 iron": { loft: 42 },
+    "PW": { loft: 46, dyn: 33, aoa: -5, M: 0.3, e: 0.77, spinK: 1, sole: 0.024, bounce: 6, R: 1.38, width: 0.06, lean: 7, camber: 0.25 },
+    "Gap wedge": { loft: 50 },
+    "Sand wedge": { loft: 56, dyn: 44, aoa: -5.5, M: 0.31, e: 0.76, spinK: 1, sole: 0.035, bounce: 12, R: 1.33, width: 0.058, lean: 3, camber: 0.2 },
+    "Lob wedge": { loft: 60 },
+    "Putter": { loft: 3 },
+  };
+
+  // ------------------------------------------------------------------ flight
+  const FLAT = { height: () => 0, surface: () => "fairway", grad: () => [0, 0], pin: null };
+  // A ball's flight with the engine. ball: { speedMph, vla, hla, spinRpm, axisDeg }; opts as the
+  // engine's simulate (course, start, aimYaw, weather, carryOnly), flat fairway if left out. Distances
+  // in yards; side is how far right of the start line it lands (+R), sideTotal where it stops.
+  function fly(ball, opts = {}) {
+    const r = OG.simulate(ball, { course: FLAT, start: [0, 0, 0], aimYaw: 0, ...opts }), land = r.landing || r.final;
+    return { carry: r.carry / YD, total: r.total / YD, apex: r.apex / YD, side: land ? -land[0] / YD : 0, sideTotal: r.offline / YD,
+      descent: r.landAngle, hang: r.hang, samples: r.samples, duration: r.duration, result: r.result, raw: r };
+  }
+  const carryOf = s => fly(s, { carryOnly: true });
+  // A recorded shot's flight, worked out once per shot (its measured launch on flat ground in still air)
+  const flights = new Map();
+  function flightOf(shot) {
+    if (!shot || !shot.ball) return null;
+    const k = shot.id || JSON.stringify(shot.ball);
+    if (!flights.has(k)) { let f = null; try { f = fly(shot.ball); } catch (e) { console.error(e); } flights.set(k, f); if (flights.size > 5000) flights.delete(flights.keys().next().value); }
+    return flights.get(k);
+  }
+  const forget = id => flights.delete(id);
+  const flights_ = shots => shots.map(s => { const f = flightOf(s); return f && { carry: f.carry, total: f.total, side: f.side }; }); // many at once (the NUC's shot search)
+
+  // ------------------------------------------------------------------ the Omni itself
+  // The club codes the Omni takes (command 130: [code, group]); "Any club" is told to it as a 7 iron.
+  const OMNI_CODES = { "Driver": [1, 0], "3 wood": [3, 1], "4 hybrid": [14, 1], "5 iron": [5, 2], "6 iron": [6, 2], "7 iron": [7, 2], "8 iron": [8, 2], "9 iron": [9, 2],
+    "PW": [10, 2], "Gap wedge": [11, 2], "Sand wedge": [12, 2], "Lob wedge": [13, 2], "Putter": [1, 3], "diag": [7, 2] };
+  // Where the ball sat, from the Omni's ball-detected status: three numbers in mm, z the height of the
+  // ball's centre above the Omni's ground (on a mat about 23.6). Tee height: how far the bottom of the
+  // ball is above that ground (a ball's radius is 21.35 mm), so about 2 mm on a mat, more on a tee.
+  const BALL_R_MM = 21.35;
+  const teeOf = shot => (shot && shot.spot && shot.spot.z != null ? shot.spot.z - BALL_R_MM : null);
+
+  // ------------------------------------------------------------------ levels
+  // LEVELS.LIST, byId[id]: the levels; profile(id)[club]: { club, ball (mph), launch, spin, est };
+  // shotAt(p, v): the launch for a swing at ball speed v; solve(id, club, yd, fly, launch): the swing
+  // that carries yd.
+  // Practice bands: typical full-swing launch numbers for a level of golfer, per club.
+  //
+  // Sources
+  //  - PGA Tour and LPGA Tour: TrackMan Tour Averages (club speed, ball speed, launch, spin per club).
+  //  - Amateur driver: TrackMan Combine averages by handicap (men: scratch, 5, 10, 14.5, bogey;
+  //    women: scratch, 5, 10, 15).
+  //  - Amateur 6-iron, and the slowest driver bands: R&A/USGA report R22-01, "Launch conditions of
+  //    male and female golfers of different skill levels" (2019), CONGU handicap categories 1-4.
+  //
+  // How a band is built: each amateur band has a driver anchor and a 6-iron anchor, and is laid over
+  // the tour profile of the same gender. Clubs from driver to 6 iron sit between the band's driver
+  // and 6 iron in the same place they sit between the tour's driver and 6 iron, so gaps stay in
+  // order; 7 iron to lob wedge keep the 6-iron ratios. The 4 hybrid and the gap, sand and lob wedges
+  // are not in TrackMan's tables, so they are estimates (4 hybrid between the nearest clubs, wedges
+  // stepped from the pitching wedge the same way Omni Golf v4 steps them).
+
+  // [club speed mph, ball speed mph, launch deg, spin rpm, estimated?]
+  const TOUR = {
+    m: {
+      "Driver": [113, 167, 10.9, 2686], "3 wood": [107, 158, 9.2, 3655], "4 hybrid": [97, 140, 11.5, 4650, 1],
+      "5 iron": [94, 132, 12.1, 5361], "6 iron": [92, 127, 14.1, 6231], "7 iron": [90, 120, 16.3, 7097],
+      "8 iron": [87, 115, 18.1, 7998], "9 iron": [85, 109, 20.4, 8647], "PW": [83, 102, 24.2, 9304],
+    },
+    f: {
+      "Driver": [94, 140, 13.2, 2611], "3 wood": [90, 132, 11.2, 2704], "4 hybrid": [82, 119, 13.5, 4750, 1],
+      "5 iron": [79, 112, 14.8, 5081], "6 iron": [78, 109, 17.1, 5943], "7 iron": [76, 104, 19.0, 6699],
+      "8 iron": [74, 100, 20.8, 7494], "9 iron": [72, 93, 23.9, 7589], "PW": [70, 86, 25.7, 8403],
+    },
+  };
+  for (const g of ["m", "f"]) {
+    const [c, b, l, s] = TOUR[g].PW, smash = b / c;
+    for (const [name, dc, ds, dl, dsp] of [["Gap wedge", 2, 0.02, 2.5, 500], ["Sand wedge", 4, 0.04, 5, 900], ["Lob wedge", 6, 0.07, 8, 1200]]) {
+      const cc = c - dc;
+      TOUR[g][name] = [cc, Math.round(cc * (smash - ds) * 10) / 10, l + dl, s + dsp, 1];
+    }
+  }
+  // Reference points the amateur anchors are compared against
+  const DR_REF = { m: TOUR.m.Driver, f: TOUR.f.Driver };          // TrackMan tour driver (same source as the Combine)
+  const SIX_REF = { m: [89.4, 125.0, 12.8, 6097], f: [79.6, 112.9, 15.1, 5217] }; // R&A/USGA professionals, 6-iron
+
+  const LIST = [
+    { id: "pga", label: "PGA Tour", short: "PGA", g: "m", tour: true, src: "TrackMan PGA Tour averages." },
+    { id: "lpga", label: "LPGA Tour", short: "LPGA", g: "f", tour: true, src: "TrackMan LPGA Tour averages." },
+    { id: "m-0-9", label: "Men 0–9", short: "0–9", g: "m", dr: [101, 147, 11.2, 2987], six: [83.35, 116.2, 12.25, 5003],
+      src: "Driver: TrackMan Combine, 5 handicap. 6-iron: R&A/USGA categories 1–2." },
+    { id: "m-10-18", label: "Men 10–18", short: "10–18", g: "m", dr: [94.5, 135.5, 12.25, 3234], six: [79.2, 109.05, 12.3, 4595],
+      src: "Driver: TrackMan Combine, 10 and 14.5 handicaps. 6-iron: R&A/USGA categories 2–3." },
+    { id: "m-18", label: "Men 18+", short: "18+", g: "m", dr: [87.7, 123.75, 12.1, 3127], six: [77.95, 104.85, 12.1, 4648],
+      src: "Driver speed: R&A/USGA categories 3–4; launch and spin: TrackMan Combine bogey golfer. 6-iron: R&A/USGA categories 3–4." },
+    { id: "f-0-9", label: "Women 0–9", short: "0–9", g: "f", dr: [87, 125, 12.0, 3027], six: [74.7, 102.8, 14.2, 4685],
+      src: "Driver: TrackMan Combine, 5 handicap. 6-iron: R&A/USGA category 1." },
+    { id: "f-10-18", label: "Women 10–18", short: "10–18", g: "f", dr: [81, 115, 13.0, 3247], six: [64.7, 90.5, 15.1, 4096],
+      src: "Driver: TrackMan Combine, 10 and 15 handicaps. 6-iron: R&A/USGA category 2." },
+    { id: "f-18", label: "Women 18+", short: "18+", g: "f", dr: [65.5, 91.9, 10.85, 2883], six: [54.55, 74.4, 14.0, 3586],
+      src: "Driver and 6-iron: R&A/USGA categories 3–4." },
+  ];
+  const byId = Object.fromEntries(LIST.map(b => [b.id, b]));
+  const profiles = {};
+
+  function profile(id) {
+    if (profiles[id]) return profiles[id];
+    const b = byId[id] || byId["m-10-18"], T = TOUR[b.g], out = {};
+    const Td = T.Driver, T6 = T["6 iron"], six = SIX_REF[b.g];
+    // The band's driver (already on TrackMan's scale) and its 6-iron moved onto TrackMan's scale
+    const Bd = b.dr, B6 = b.tour ? null : [T6[0] * b.six[0] / six[0], T6[1] * b.six[1] / six[1], T6[2] + b.six[2] - six[2], T6[3] * b.six[3] / six[3]];
+    const r1 = x => Math.round(x * 10) / 10;
+    for (const club of ORDER) {
+      const [c, v, l, s, est] = T[club];
+      if (b.tour) { out[club] = { club: c, ball: v, launch: l, spin: s, est: !!est }; continue; }
+      if (v >= T6[1]) {
+        // Driver down to 6 iron: place the club between the band's driver and 6 iron by where it
+        // sits between the tour's driver and 6 iron, so the gaps stay in order.
+        const w = Math.min(1, (v - T6[1]) / (Td[1] - T6[1]));
+        const lerp = (k) => B6[k] + (T[club][k] - T6[k]) * (Bd[k] - B6[k]) / (Td[k] - T6[k]);
+        out[club] = { club: r1(lerp(0)), ball: r1(lerp(1)),
+          launch: r1(l + (1 - w) * (B6[2] - T6[2]) + w * (Bd[2] - Td[2])),
+          spin: Math.round(s * ((1 - w) * B6[3] / T6[3] + w * Bd[3] / Td[3])), est: club !== "Driver" && club !== "6 iron" };
+      } else {
+        // 7 iron to lob wedge: the same ratios as the band's 6 iron
+        out[club] = { club: r1(c * B6[0] / T6[0]), ball: r1(v * B6[1] / T6[1]), launch: r1(l + B6[2] - T6[2]), spin: Math.round(s * B6[3] / T6[3]), est: true };
+      }
+    }
+    return (profiles[id] = out);
+  }
+
+  // Launch conditions for a swing at ball speed v with this club's band profile.
+  // Slower than a full swing launches a little higher with less spin (Omni Golf v4's rule).
+  // Goes down to a tenth of a full swing, for the Train tab's short chips; practice targets
+  // only look between 35% and 125% (see solve).
+  function shotAt(p, v) {
+    const a = Math.min(1.25, Math.max(0.1, v / p.ball));
+    return { speedMph: Math.round(v * 10) / 10, vla: Math.round(Math.max(4, p.launch + (1 - a) * 4) * 10) / 10, hla: 0, spinRpm: Math.round(p.spin * a), axisDeg: 0 };
+  }
+
+  // fly(shot) -> { carry, apex, descent } in yards / degrees. launch: the player's own full-swing
+  // launch angle for this club, used instead of the band's when they've set one.
+  function solve(id, club, yd, fly = carryOf, launch = null) {
+    let p = profile(id)[club];
+    if (!p) return null;
+    if (launch != null && isFinite(launch)) p = { ...p, launch: +launch, own: true };
+    const lo = 0.35 * p.ball, hi = 1.25 * p.ball;
+    const at = v => { const s = shotAt(p, v); return { shot: s, ...fly(s) }; };
+    const top = at(hi), bottom = at(lo);
+    if (yd > top.carry) return { ok: false, tooFar: true, max: top.carry, profile: p, ...top, swing: 1.25 };
+    if (yd < bottom.carry) return { ok: false, tooShort: true, min: bottom.carry, profile: p, ...bottom, swing: 0.35 };
+    let a = lo, b = hi, r = null;
+    for (let k = 0; k < 28; k++) { const m = (a + b) / 2; r = at(m); if (r.carry < yd) a = m; else b = m; }
+    const v = (a + b) / 2; r = at(v);
+    return { ok: true, profile: p, ...r, swing: v / p.ball, clubMph: Math.round(p.club * v / p.ball * 10) / 10 };
+  }
+  const LEVELS = { ORDER, LIST, byId, profile, solve, shotAt, DEFAULT: "m-10-18" };
+
+  // The labs' club tables, from the specs and a level's club speeds (tour by default: the labs model tour
+  // players), in the shapes the labs and the game use. Launch Lab and Omni Golf's lie model: the head
+  // meeting the ball; Divot Lab: the sole; Roll and Airflow Lab: a full swing's launch.
+  const LAB_KEYS = [["driver", "Driver", "Driver"], ["w3", "3 wood", "3-wood"], ["i5", "5 iron", "5-iron"], ["i7", "7 iron", "7-iron"], ["pw", "PW", "Pitching wedge"], ["sw", "Sand wedge", "Sand wedge"]];
+  const labClubs = (fields, need, level) => {
+    const prof = profile(level), out = {};
+    for (const [k, club, name] of LAB_KEYS) {
+      const s = SPECS[club];
+      if (!need.every(f => s[f] != null)) continue;
+      out[k] = { name, ...Object.fromEntries(fields.map(f => [f, f === "mph" ? prof[club].club : s[f]]).filter(([, v]) => v != null)) };
+    }
+    return out;
+  };
+  const impactClubs = (level = "pga") => labClubs(["loft", "dyn", "aoa", "mph", "M", "e", "spinK", "from"], ["dyn"], level);
+  const soleClubs = (level = "pga") => labClubs(["loft", "sole", "bounce", "R", "width", "mph", "lean", "camber"], ["sole"], level);
+  // a level's full swing with a club, as a launch: { speedMph, vla, spinRpm }
+  const tour = (club, level = "pga") => { const q = profile(level)[club]; return { speedMph: q.ball, vla: q.launch, spinRpm: q.spin }; };
+
+  // ------------------------------------------------------------------ wind
+  // The Beaufort scale: [force, typical wind at 10 m (m/s), name, what you see on land] (Wind, Sway and
+  // Grass Lab)
+  const BEAUFORT = [[0, 0.2, "Calm", "Smoke rises vertically."], [1, 0.9, "Light air", "Wind direction shown by smoke drift only."], [2, 2.4, "Light breeze", "Wind felt on face, leaves rustle."],
+    [3, 4.4, "Gentle breeze", "Leaves and small twigs in constant motion."], [4, 6.7, "Moderate breeze", "Raises dust and loose paper; small branches move."],
+    [5, 9.3, "Fresh breeze", "Small trees in leaf begin to sway."], [6, 12.3, "Strong breeze", "Large branches in motion."], [7, 15.5, "Near gale", "Whole trees in motion."],
+    [8, 18.9, "Gale", "Breaks twigs off trees."], [9, 22.6, "Severe gale", "Slight structural damage."]];
+
+  // ------------------------------------------------------------------ a player's numbers
+  // player: { band (their level), bag: [club], launch: { club: their own full-swing launch angle } }
+  const ownLaunch = (player, club) => { const v = player && player.launch ? player.launch[club] : null; return v == null || v === "" || !isFinite(v) ? null : +v; };
+  const levelOf = player => (player && byId[player.band] ? player.band : LEVELS.DEFAULT);
+  function numbers(player, club) {
+    const q = profile(levelOf(player))[club];
+    if (!q) return null;
+    const own = ownLaunch(player, club);
+    return own != null ? { ...q, launch: own, own: true } : q;
+  }
+  const bagOf = player => ORDER.filter(c => !player || !player.bag || player.bag.includes(c));
+  // How far a player's full swing with a club carries, on flat ground in still air (yards)
+  const fullCache = new Map();
+  function fullCarry(player, club) {
+    const q = numbers(player, club);
+    if (!q) return null;
+    const k = `${levelOf(player)}|${club}|${q.launch}`;
+    if (!fullCache.has(k)) fullCache.set(k, carryOf(shotAt(q, q.ball)).carry);
+    return fullCache.get(k);
+  }
+  // What the player is aiming at, from their settings: "train" while a Train game is on, otherwise the
+  // mode they last picked ("practice" or "train")
+  const aimOf = player => { const s = (player && player.settings) || {}; return s.train && s.train.on ? "train" : s.aim === "train" ? "train" : "practice"; };
+  // The practice target a shot with this club is recorded against: only while practice is on and they're
+  // aiming at it. The NUC's recorder and Range Lab both use this.
+  function practiceTarget(player, club) {
+    if (!player || !player.practiceOn || !(player.practiceYd > 0) || !byClub(club) || aimOf(player) !== "practice") return null;
+    const own = ownLaunch(player, club);
+    return { yd: player.practiceYd, band: levelOf(player), club, ...(own != null ? { launch: own } : {}) };
+  }
+  const byClub = club => ORDER.includes(club);
+  // ------------------------------------------------------------------ swings and distances
+  // the kinds of shot a player says they're hitting; each has its own distances
+  const SWINGS = [{ id: "full", short: "Full", name: "Full swing" }, { id: "2/3", short: "⅔", name: "⅔ swing" }, { id: "1/3", short: "⅓", name: "⅓ swing" },
+    { id: "pitch", short: "Pitch", name: "Pitch" }, { id: "chip", short: "Chip", name: "Chip" }];
+  const swingOf = s => (SWINGS.some(w => w.id === s.swing) ? s.swing : "full");
+  const mean = a => a.length ? a.reduce((x, y) => x + y, 0) / a.length : null;
+  const sd = a => { if (a.length < 2) return null; const m = mean(a); return Math.sqrt(a.reduce((x, y) => x + (y - m) ** 2, 0) / (a.length - 1)); };
+  function stat(vals) { const v = vals.filter(x => x != null && isFinite(x)); return v.length ? { n: v.length, mean: mean(v), sd: sd(v), min: Math.min(...v), max: Math.max(...v) } : null; }
+  // A player's distances, as Range Lab's Distances tab shows them: real shots only (not typed in, not
+  // "Any club", not Train game shots), since a time, per club and swing; shots left out stay listed
+  // but don't count. cells["7 iron|full"] = { club, swing, all, used, carry: stat, total: stat }
+  function distances(player, shots, since = 0) {
+    const pool = shots.filter(s => s.player === player.id && ORDER.includes(s.club) && s.src !== "manual" && s.ts >= since && !(s.target && s.target.drill));
+    const clubs = ORDER.filter(c => pool.some(s => s.club === c)), cells = {};
+    for (const c of clubs) for (const { id: w } of SWINGS) {
+      const all = pool.filter(s => s.club === c && swingOf(s) === w), used = all.filter(s => !s.excluded), fs = used.map(flightOf).filter(Boolean);
+      cells[`${c}|${w}`] = { club: c, swing: w, all, used, carry: stat(fs.map(x => x.carry)), total: stat(fs.map(x => x.total)) };
+    }
+    return { pool, clubs, cells, empty: (player.bag || []).filter(c => ORDER.includes(c) && !clubs.includes(c)) };
+  }
+
+  // ------------------------------------------------------------------ the aim
+  // Everything that goes with what you've picked to aim at, worked out with this model: Range Lab's
+  // centre (its aim), Train's guides and the Omni connector all use it. want: any of carry (yd), speed
+  // (mph), launch, dir, axis (°), spin, back, side (rpm). The ball speed is solved from the carry, or is
+  // the speed picked, or follows from the spin picked, or else is lastSpeed (your last real shot with
+  // this club; a full swing if there isn't one). Returns { ok, club, pclub, band, own, from, ball, back,
+  // side, clubMph, swing, flight }, or { ok: false, tooFar, max, tooShort, min }, or null.
+  // pclub: the club whose numbers to use ("Any club" in Range Lab is told to the Omni as a 7 iron).
+  const aimCache = new Map(), solveCache = new Map();
+  function solved(band, club, yd, own) { const k = `${band}|${club}|${yd}|${own}`; if (!solveCache.has(k)) solveCache.set(k, LEVELS.solve(band, club, yd, undefined, own)); return solveCache.get(k); }
+  function aimFor(player, club, want, { pclub = club, lastSpeed = null } = {}) {
+    if (!player || !ORDER.includes(pclub)) return null;
+    const band = levelOf(player), q = numbers(player, pclub), own = q && q.own ? q.launch : null;
+    if (!q) return null;
+    let v = want.speed, from = "speed", sol = null;
+    if (want.carry != null) {
+      sol = solved(band, pclub, want.carry, own);
+      if (!sol) return null;
+      if (!sol.ok) return { ok: false, club, pclub, band, own, tooFar: !!sol.tooFar, max: sol.max, tooShort: !!sol.tooShort, min: sol.min };
+      v = sol.shot.speedMph; from = "carry";
+    } else if (v == null && (want.spin != null || want.back != null)) {
+      v = (want.spin != null ? want.spin : want.back) / q.spin * q.ball; from = "spin";
+    } else if (v == null) { v = lastSpeed != null ? lastSpeed : q.ball; from = lastSpeed != null ? "last" : "full"; }
+    v = Math.max(3, v);
+    const k = JSON.stringify([band, pclub, own, Math.round(v * 10), want]);
+    if (aimCache.has(k)) return { ...aimCache.get(k), club };
+    const sh = sol ? sol.shot : shotAt(q, v), deg = Math.PI / 180;
+    const total = want.spin != null ? want.spin : want.back != null ? Math.hypot(want.back, want.side || 0) : sh.spinRpm;
+    const axis = want.axis != null ? want.axis : want.side != null ? Math.atan2(want.side, want.back != null ? want.back : total) / deg : 0;
+    const ball = { speedMph: sh.speedMph, vla: want.launch != null ? want.launch : sh.vla, hla: want.dir != null ? want.dir : 0, spinRpm: total, axisDeg: axis };
+    let flight = null;
+    try { const f = fly(ball); flight = { carry: f.carry, total: f.total, apex: f.apex, descent: f.descent, side: f.side }; } catch {}
+    const out = { ok: true, club, pclub, band, own, from, ball, back: total * Math.cos(axis * deg), side: total * Math.sin(axis * deg),
+      clubMph: sol ? sol.clubMph : q.club * v / q.ball, swing: sol ? sol.swing : v / q.ball, flight };
+    aimCache.set(k, out);
+    return out;
+  }
+
+  // ------------------------------------------------------------------ Train
+  // The games for one measured number at a time (Range Lab's Train tab; the Omni connector starts them
+  // too). kind "pct": a tolerance is a percentage of the target; "abs": in the number's own units.
+  // tiers: Easy, Medium, Hard; "Mine" comes from the player's own warm-up shots.
+  const span = (a, b, step) => Array.from({ length: Math.round((b - a) / step) + 1 }, (_, i) => +(a + i * step).toFixed(3));
+  const TRAIN = {
+    METRICS: {
+      speed: { name: "Ball speed", unit: "mph", kind: "pct", tiers: [10, 5, 2.5], ladder: span(10, 160, 5), def: 25, lo: 3, hi: 200, step: 0.1 },
+      dir: { name: "Direction", unit: "°", kind: "abs", tiers: [4, 2, 1], ladder: [-10, -5, 0, 5, 10], def: 0, lo: -30, hi: 30, lrm: true, step: 0.1 },
+      launch: { name: "Launch angle", unit: "°", kind: "abs", tiers: [3, 1.5, 0.75], ladder: span(5, 50, 5), def: 15, lo: 0, hi: 70, step: 0.1 },
+      back: { name: "Back spin", unit: "rpm", kind: "pct", tiers: [20, 10, 5], ladder: span(1000, 10000, 1000), def: 4000, lo: 100, hi: 15000, step: 10 },
+      side: { name: "Side spin", unit: "rpm", kind: "abs", tiers: [600, 300, 150], ladder: span(-1500, 1500, 500), def: 0, lo: -5000, hi: 5000, lrm: true, step: 10 },
+      spin: { name: "Spin rate", unit: "rpm", kind: "pct", tiers: [20, 10, 5], ladder: span(1000, 10000, 1000), def: 4000, lo: 100, hi: 15000, step: 10 },
+      axis: { name: "Spin axis", unit: "°", kind: "abs", tiers: [6, 3, 1.5], ladder: span(-15, 15, 5), def: 0, lo: -45, hi: 45, lrm: true, step: 0.1 },
+    },
+    GAMES: [
+      { id: "speed", name: "Ball speed", main: "speed", note: "Hit the ball speed you pick, at any launch or direction. 15–25 mph is a short chip; go up 5 at a time." },
+      { id: "straight", name: "Straight", main: "dir", note: "Start the ball on the target line: direction 0°, at any speed. The other targets start it left or right on purpose." },
+      { id: "speed-straight", name: "Speed + straight", main: "speed", also: { dir: 0 }, note: "Both at once: the ball speed you pick, started straight." },
+      { id: "launch", name: "Launch angle", main: "launch", note: "Launch the ball at the angle you pick. Try several angles with the same club: ball position and shaft lean change it." },
+      { id: "launch-straight", name: "Launch + straight", main: "launch", also: { dir: 0 }, note: "The launch angle you pick, started straight." },
+      { id: "back", name: "Back spin", main: "back", note: "The back spin you pick. More speed and a steeper strike both add spin." },
+      { id: "side", name: "Side spin", main: "side", note: "Side spin curves the ball: R curves it right, L curves it left. None means it flies straight." },
+      { id: "back-side", name: "Back + side spin", main: "back", also: { side: 0 }, note: "The back spin you pick, with no side spin." },
+      { id: "spin", name: "Spin rate", main: "spin", note: "Total spin, whichever way it's tilted." },
+      { id: "axis", name: "Spin axis", main: "axis", note: "The tilt of the spin: 0° doesn't curve, R curves right, L curves left." },
+    ],
+    TIERS: ["Easy", "Medium", "Hard", "Mine"], MINE: 3, WARMUPS: 5, GOALS: [3, 4, 5],
+  };
+  // A player's Train settings (their settings.train, with the defaults filled in), and what the game
+  // in play is aiming for: { metric: value }
+  function trainOf(player) {
+    const st = { game: "speed", targets: {}, tier: 1, goal: 5, on: false, warm: 0, sound: true, ...((player && player.settings && player.settings.train) || {}) };
+    if (!TRAIN.GAMES.some(g => g.id === st.game)) st.game = "speed";
+    return st;
+  }
+  function trainWant(st) {
+    const g = TRAIN.GAMES.find(x => x.id === st.game) || TRAIN.GAMES[0], m = TRAIN.METRICS[g.main], v = (st.targets || {})[g.id];
+    return { [g.main]: v != null && isFinite(v) ? +v : m.def, ...(g.also || {}) };
+  }
+
+  // How a Train target has gone, from the player's game shots: shots, in tolerance, best run, and each
+  // time it was done ({ ts, tier, goal, shots })
+  const sameWant = (a, b) => { const ka = Object.keys(a || {}), kb = Object.keys(b || {}); return ka.length === kb.length && ka.every(k => b[k] === a[k]); };
+  const drills = (shots, pid) => shots.filter(s => s.player === pid && s.target && s.target.drill).sort((a, b) => a.ts - b.ts);
+  function trainProgress(shots, pid, gid, want) {
+    const list = drills(shots, pid).filter(s => s.target.drill.g === gid && !s.target.drill.warm && sameWant(s.target.drill.want, want));
+    const info = { n: list.length, hits: 0, best: 0, done: [], last: list[list.length - 1] || null };
+    let since = 0;
+    for (const s of list) {
+      const d = s.target.drill; since++;
+      if (d.hit) info.hits++;
+      info.best = Math.max(info.best, d.streak || 0);
+      if (d.done && !d.testRun) { info.done.push({ ts: s.ts, tier: d.tier, goal: d.goal, shots: since }); since = 0; }
+    }
+    return info;
+  }
+
+  // A new player: the shape the NUC's database stores (relay/omni_relay/data.py)
+  const newPlayer = (id, name) => ({ id, name, hand: "R", bag: ORDER.slice(), club: "7 iron", swing: "full", band: LEVELS.DEFAULT, practiceYd: 150, practiceOn: false, launch: {}, settings: {} });
+
+  return { YD, FT, MPS, yd, metres, ydBetween, CLUBS, ORDER, PUTTER, SHORT, SPECS, FLAT, fly, carryOf, LEVELS, ownLaunch, levelOf, numbers, bagOf, fullCarry, impactClubs, soleClubs, tour, BEAUFORT, flightOf, forget, SWINGS, swingOf, OMNI_CODES, BALL_R_MM, teeOf, flights: flights_, mean, sd, stat, distances, solved, aimFor, aimOf, practiceTarget, TRAIN, trainOf, trainWant, sameWant, drills, trainProgress, newPlayer };
+})();
+</script>
 <script data-omni-shared="remote">
 // The Omni remote: lets the Omni connector (Claude, on a voice call) see and work any Omni page.
 //
