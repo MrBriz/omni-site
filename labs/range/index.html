@@ -2443,7 +2443,8 @@ if (window.visualViewport) visualViewport.addEventListener("resize", resize); //
 function viewRect() {
   const W = innerWidth, H = innerHeight, hud = $("hud").getBoundingClientRect(), p = $("panel").getBoundingClientRect();
   const r = { x: 0, y: hud.bottom + 4, w: W, h: H - hud.bottom - 4 };
-  if (p.left > W * 0.45 && p.top < H * 0.3) r.w = p.left - 10; else r.h = p.top - 8 - r.y;
+  // a hidden panel measures 0 × 0 at the top left: then the range has the whole screen below the bars
+  if (panelOn && p.width > 0) { if (p.left > W * 0.45 && p.top < H * 0.3) r.w = p.left - 10; else r.h = p.top - 8 - r.y; }
   r.h = Math.max(140, r.h);
   return r;
 }
@@ -2583,7 +2584,7 @@ async function reload() {
 })();
 addEventListener("pagehide", () => { store && store.flush && store.flush(); });
 document.addEventListener("visibilitychange", () => { if (document.hidden && store && store.flush) store.flush(); });
-window.rangeLab = { S, get store() { return store; }, get info() { return storeInfo; }, record, calc, solve, BANDS, RawTap, live, distData, grouping, get browserCopy() { return browserCopy; }, train: () => trainApi };
+window.rangeLab = { S, get store() { return store; }, get info() { return storeInfo; }, record, calc, solve, BANDS, RawTap, live, distData, grouping, viewRect, get browserCopy() { return browserCopy; }, train: () => trainApi };
 
 // ------------------------------------------------------------------ Train: games for the measured numbers
 // One number at a time, then two together, in the order that builds a swing: ball speed, start line,
