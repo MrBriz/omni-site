@@ -36,6 +36,7 @@
   .lv b { font-size: 17px; }
   .lv.calcv { opacity: .7; font-size: 13px; border-left: 1px dashed rgba(255,255,255,.3); padding-left: 10px; }
   .lv.tgt { color: #bae6fd; border-left: 1px solid rgba(125,211,252,.4); padding-left: 10px; font-size: 13px; }
+  .lv.tgt.off { color: #94a3b8; }
   .lv .need { font-size: 11px; color: #bae6fd; opacity: .9; margin-top: 1px; }
   .lv .need.guide { color: #cbd5e1; opacity: .75; }
   .gm-guide { font-size: 12px; opacity: .8; color: #e2e8f0; }
@@ -1670,12 +1671,6 @@ const solveCache = new Map(), fullCache = new Map();
 function solve(band, club, yd, launch = null) { const k = `${band}|${club}|${yd}|${launch}`; if (!solveCache.has(k)) solveCache.set(k, BANDS.solve(band, club, yd, fly, launch)); return solveCache.get(k); }
 const ownProfile = (band, club, launch) => { const q = BANDS.profile(band)[club]; return q && launch != null ? { ...q, launch } : q; };
 function fullCarry(band, club, launch = null) { const k = `${band}|${club}|${launch}`; if (!fullCache.has(k)) { const q = ownProfile(band, club, launch); fullCache.set(k, fly(BANDS.shotAt(q, q.ball)).carry); } return fullCache.get(k); }
-function practice() {
-  const p = me(), club = curClub();
-  if (!p.practiceOn || club === DIAG || !(p.practiceYd > 0)) return null;
-  const launch = launchFor(p, club);
-  return { yd: p.practiceYd, band: p.band, club, launch, sol: solve(p.band, club, p.practiceYd, launch) };
-}
 // The rough landing grouping: an oval that about two shots in three land inside (a 2-D normal fit to
 // the landing spots, so it tilts if misses go long-left and short-right, say). pts: [[side, carry]]
 const K68 = Math.sqrt(-2 * Math.log(1 - 0.68));
@@ -1723,18 +1718,8 @@ function renderHUD() {
   const b = $("conn"); b.textContent = connStatus.text; b.className = connStatus.cls;
   renderLive();
 }
-// What the live bar asks for under each number: a Train game's targets if one is on, otherwise the
-// practice target's (straight, with the speed, launch and spin needed for the distance).
-// Each entry: { want, tol: [kind, value] } with kind "pct" (of want) or "abs"; carry: yards wanted.
-function needs() {
-  const g = typeof trainNeeds === "function" ? trainNeeds() : null;
-  if (g) return g;
-  const pr = practice();
-  if (!pr || !pr.sol || !pr.sol.ok) return null;
-  const n = pr.sol.shot;
-  return { from: `Target ${f0(pr.yd)} yd`, m: { speed: { want: n.speedMph, tol: ["pct", 5] }, launch: { want: n.vla, tol: ["abs", 1.5] }, dir: { want: 0, tol: ["abs", 2] },
-    spin: { want: n.spinRpm, tol: ["pct", 10] }, axis: { want: 0, tol: ["abs", 3] } }, carry: pr.yd };
-}
+// The live bar shows the aim (src/aim.js) under each number. A tolerance is [kind, value]: kind "pct" (of
+// want) or "abs".
 const within = (v, nd) => v != null && isFinite(v) && Math.abs(v - nd.want) <= (nd.tol[0] === "pct" ? Math.abs(nd.want) * nd.tol[1] / 100 : nd.tol[1]);
 const backOf = b => b.backSpin != null ? b.backSpin : b.spinRpm * Math.cos(b.axisDeg * Math.PI / 180);
 const sideOf = b => b.sideSpin != null ? b.sideSpin : b.spinRpm * Math.sin(b.axisDeg * Math.PI / 180);
@@ -1742,7 +1727,7 @@ const sideOf = b => b.sideSpin != null ? b.sideSpin : b.spinRpm * Math.sin(b.axi
 const LIVE = [["speed", "Ball", b => b.speedMph, f1, " mph"], ["launch", "Launch", b => b.vla, f1, "°"], ["dir", "Direction", b => b.hla, v => lr(v, "°"), ""],
   ["spin", "Spin", b => b.spinRpm, f0, " rpm"], ["axis", "Axis", b => b.axisDeg, v => lr(v, "°"), ""], ["back", "Back", backOf, f0, ""], ["side", "Side", sideOf, v => v == null || !isFinite(v) ? "–" : Math.round(v) === 0 ? "0" : `${Math.abs(Math.round(v))} ${v > 0 ? "R" : "L"}`, ""]];
 function renderLive() {
-  const el = $("live"), s = selected(), nd = needs();
+  const el = $("live"), s = selected(), nd = aimNow();
   let h = "";
   if (s) h += `<span class="badge ${s.src === "manual" ? "test" : "meas"}">${s.src === "manual" ? "Test shot" : s.src === "frp" ? "flighthook" : s.src === "relay" ? "Omni · relay" : "Omni"}</span>`;
   else if (!nd) h += `<span class="muted">Waiting for a shot. The Omni's measured numbers appear here first.</span>`;
@@ -1758,7 +1743,7 @@ function renderLive() {
     h += `<span class="lv calcv"><span class="lk">Carry</span><span>≈ ${f1(c && c.carry)} yd</span>${nd && nd.carry ? (nd.carryGuide ? `<span class="need guide">≈ ${f0(nd.carry)}</span>` : `<span class="need">need ${f0(nd.carry)}</span>`) : ""}</span>`;
     h += `<span class="lv calcv"><span class="lk">Total</span><span>≈ ${f1(c && c.total)} yd</span></span>`;
   }
-  if (nd && nd.from) h += `<span class="lv tgt"><span class="lk">Aiming for</span>${esc(nd.from)}</span>`;
+  if (nd) h += `<span class="lv tgt${nd.on ? "" : " off"}"><span class="lk">Aiming for</span>${esc(nd.text)}</span>`;
   if (conn && conn.kind === "relay" && squareClub) h += `<span class="lv calcv"><span class="lk">Square app</span>${esc(squareClub)}</span>`;
   h += `<button class="mini tog${sideOn ? " sel" : ""}" id="bSide" aria-pressed="${sideOn}" title="Show the side view of the flight under this bar">Side view</button>`;
   el.innerHTML = h;
@@ -1795,7 +1780,7 @@ function tellOmni() {
 
 // ------------------------------------------------------------------ tabs
 const TABS = [["shot", "tShot", "pShot"], ["shots", "tShots", "pShots"], ["dist", "tDist", "pDist"], ["practice", "tPractice", "pPractice"], ["train", "tTrain", "pTrain"], ["raw", "tRaw", "pRaw"], ["player", "tPlayer", "pPlayer"]];
-function showTab(t) { tab = t; for (const [k, b, p] of TABS) { $(b).classList.toggle("sel", k === t); $(p).classList.toggle("show", k === t); } renderPanel(); }
+function showTab(t) { tab = t; if (t === "practice" || t === "train") { setAim(t); renderLive(); } for (const [k, b, p] of TABS) { $(b).classList.toggle("sel", k === t); $(p).classList.toggle("show", k === t); } renderPanel(); }
 for (const [k, b] of TABS) $(b).onclick = () => showTab(k);
 function selected() { const list = viewShots(); return (selId && list.find(x => x.id === selId)) || list[list.length - 1] || null; }
 function renderPanel() {
@@ -2026,14 +2011,17 @@ function renderPractice() {
   if (club === DIAG) {
     h += `<div class="empty">Pick a club at the top. "Any club" has no typical numbers to aim for.</div>`;
   } else {
-    const yd = p.practiceYd || 150, own = launchFor(p, club), sol = solve(band.id, club, yd, own);
+    // the same numbers the centre shows when it's following Practice (src/aim.js)
+    const yd = p.practiceYd || 150, own = launchFor(p, club), sol = aimFrom({ carry: yd, dir: 0, axis: 0 });
     h += `<div class="sec"><div class="sec-h"><span class="badge tgt">What you need</span><span class="sec-note">calculated for a ${esc(band.label)} ${esc(club)}${own != null ? `, launching at ${esc(p.name)}'s own ${f1(own)}°` : ""}</span></div>`;
     if (sol && sol.ok) {
-      h += `<div class="grid">${tile("need", "Ball speed", f1(sol.shot.speedMph), "mph")}${tile("need", "Launch", f1(sol.shot.vla), "°")}${tile("need", "Spin", f0(sol.shot.spinRpm), "rpm")}${tile("need", "Club speed", "≈" + f1(sol.clubMph), "mph")}${tile("need", "Swing", f0(sol.swing * 100), "% of full")}${tile("need", "Apex / descent", `${f0(sol.apex)} / ${f0(sol.descent)}`, "yd / °", true)}</div>`;
+      const b = sol.ball, f = sol.flight || {};
+      h += `<div class="grid">${tile("need", "Ball speed", f1(b.speedMph), "mph")}${tile("need", "Launch", f1(b.vla), "°")}${tile("need", "Spin", f0(b.spinRpm), "rpm")}${tile("need", "Club speed", "≈" + f1(sol.clubMph), "mph")}${tile("need", "Swing", f0(sol.swing * 100), "% of full")}${tile("need", "Apex / descent", `${f0(f.apex)} / ${f0(f.descent)}`, "yd / °", true)}</div>`;
       if (sol.swing > 1.08) h += `<div class="note warn">That's harder than a typical full swing at this level. More club would be easier.</div>`;
       if (sol.swing < 0.75) h += `<div class="note">That's a three-quarter swing or less with this club.</div>`;
     } else if (sol && sol.tooFar) h += `<div class="empty">Even a 125% swing only carries about ${f0(sol.max)} yd with a ${esc(club)} at this level. Take more club.</div>`;
     else if (sol && sol.tooShort) h += `<div class="empty">That's under about ${f0(sol.min)} yd, shorter than a third of a swing with this club. Take less club.</div>`;
+    if (aim() === "train") h += `<div class="note">A Train game is on, so the live bar and the green show its numbers. Stop it to see these there.</div>`;
     const best = p.bag.filter(c => CLUBS.includes(c)).map(c => [c, fullCarry(band.id, c, launchFor(p, c))]).sort((a, b) => Math.abs(a[1] - yd) - Math.abs(b[1] - yd))[0];
     if (best) h += `<div class="note">At this level a full ${esc(best[0])} carries about ${f0(best[1])} yd, the closest in ${esc(p.name)}'s bag to ${f0(yd)} yd.</div>`;
     h += `</div>`;
@@ -2151,8 +2139,8 @@ function record(ball, cd, src) {
     ball: { speedMph: +ball.speedMph, vla: +ball.vla, hla: +ball.hla || 0, spinRpm: +ball.spinRpm || 0, axisDeg: +ball.axisDeg || 0, backSpin: null, sideSpin: null }, cd: cd || null, app: null, target: null };
   const pkt = raws.find(r => r.kind === "shot");
   if (pkt) { s.ball.backSpin = pkt.decoded.fields.backSpinRpm; s.ball.sideSpin = pkt.decoded.fields.sideSpinRpm; }
-  const pr = practice();
-  if (pr && pr.sol && pr.sol.ok) s.target = { yd: pr.yd, band: pr.band, club: pr.club, ...(pr.launch != null ? { launch: pr.launch } : {}), need: { speedMph: pr.sol.shot.speedMph, vla: pr.sol.shot.vla, spinRpm: pr.sol.shot.spinRpm, clubMph: pr.sol.clubMph } };
+  const a = aimNow(), r = a && a.r;
+  if (a && a.source === "practice" && a.on && a.ok) s.target = { yd: a.want.carry, band: r.band, club: r.club, ...(r.own != null ? { launch: r.own } : {}), need: { speedMph: r.ball.speedMph, vla: r.ball.vla, spinRpm: r.ball.spinRpm, clubMph: r.clubMph } };
   trainScore(s); // before it's added, so the game's run is worked out from the shots before it
   S.shots.push(s);
   persistShot(s).then(() => {
@@ -2180,10 +2168,10 @@ function testShotSheet() {
       <label class="f">Spin axis (° +R)<input type="number" id="mAx" step="0.1" value="${v.axisDeg}"></label>
     </div>
     ${own != null ? `<div class="note">"Typical" uses ${esc(me().name)}'s own launch of ${f1(own)}° for this club.</div>` : ""}
-    <div class="row"><button id="mTyp">Typical ${esc(SHORT[club] || club)}</button>${practice() && practice().sol.ok ? `<button id="mNeed">Practice target</button>` : ""}<span style="flex:1"></span><button id="mCancel">Cancel</button><button class="go" id="mHit">Hit it</button></div>`);
+    <div class="row"><button id="mTyp">Typical ${esc(SHORT[club] || club)}</button>${aimNow() && aimNow().ok ? `<button id="mNeed">${aimNow().source === "train" ? "Train aim" : "Practice target"}</button>` : ""}<span style="flex:1"></span><button id="mCancel">Cancel</button><button class="go" id="mHit">Hit it</button></div>`);
   const fill = s => { $("mSp").value = s.speedMph; $("mVla").value = s.vla; $("mHla").value = s.hla || 0; $("mSpin").value = Math.round(s.spinRpm); $("mAx").value = s.axisDeg || 0; };
   $("mTyp").onclick = () => fill(BANDS.shotAt(p, p.ball));
-  if ($("mNeed")) $("mNeed").onclick = () => fill(practice().sol.shot);
+  if ($("mNeed")) $("mNeed").onclick = () => fill(aimNow().r.ball);
   $("mCancel").onclick = closeSheet;
   $("mHit").onclick = () => {
     const ball = { speedMph: parseFloat($("mSp").value), vla: parseFloat($("mVla").value), hla: parseFloat($("mHla").value) || 0, spinRpm: parseFloat($("mSpin").value) || 0, axisDeg: parseFloat($("mAx").value) || 0 };
@@ -2452,10 +2440,12 @@ function startAnim(s) { const c = calc(s); if (!c) return; selId = s.id; anim = 
 function tick() { draw(); if (anim && (performance.now() - anim.t0) / 1000 < anim.dur + 0.3) requestAnimationFrame(tick); else { anim = null; draw(); } }
 function draw() {
   if (!S.players.length) return;
-  const W = innerWidth, H = innerHeight, r = viewRect(), pr = practice();
+  const W = innerWidth, H = innerHeight, r = viewRect(), a = aimNow();
   const list = viewShots().slice(-80), pick = selected(), pc = pick && calc(pick);
   const cs = list.map(s => [s, calc(s)]).filter(x => x[1]);
-  const tgtYd = me().practiceYd || 150;
+  // the green is where the aim lands: in Practice on the line at the target carry, in Train where the
+  // guide shot lands. It's lit once practice or the game has started.
+  const has = !!(a && a.carry > 0), tgtYd = has ? a.carry : me().practiceYd || 150, tgtSide = has ? a.side || 0 : 0, lit = !!(has && a.on);
   const far = Math.max(140, tgtYd * 1.15, ...cs.map(([, c]) => Math.max(c.total, c.carry) * 1.08));
   const L = Math.min(400, Math.ceil(far / 50) * 50);
   const teeY = r.y + r.h - 34, s = (r.h - 34 - 26) / L, cx = r.x + r.w / 2;
@@ -2463,13 +2453,13 @@ function draw() {
   ctx.fillStyle = "#3f6d2f"; ctx.fillRect(0, 0, W, H);
   for (let d = 0, i = 0; d < L + 60; d += 12.5, i++) { ctx.fillStyle = i % 2 ? "#467735" : "#3d6a2d"; ctx.fillRect(0, Y(d + 12.5), W, 12.5 * s + 1); }
   { // the one green: on the centre line at the target distance
-    const gy = Y(tgtYd), rx = Math.max(7, 9 + tgtYd / 30) * s, ry = Math.max(6, 8 + tgtYd / 30) * s;
-    ctx.fillStyle = "#3a7a2c"; ctx.beginPath(); ctx.ellipse(cx, gy, rx + 4 * s, ry + 4 * s, 0, 0, Math.PI * 2); ctx.fill();
-    ctx.fillStyle = "#62a84a"; ctx.beginPath(); ctx.ellipse(cx, gy, rx, ry, 0, 0, Math.PI * 2); ctx.fill();
-    ctx.strokeStyle = pr ? "#7dd3fc" : "rgba(255,255,255,.3)"; ctx.lineWidth = pr ? 2 : 1; ctx.stroke();
-    ctx.strokeStyle = "#f8fafc"; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.moveTo(cx, gy); ctx.lineTo(cx, gy - 20); ctx.stroke();
-    ctx.fillStyle = "#ef4444"; ctx.beginPath(); ctx.moveTo(cx, gy - 20); ctx.lineTo(cx + 11, gy - 16.5); ctx.lineTo(cx, gy - 13); ctx.fill();
-    ctx.fillStyle = "rgba(0,0,0,.35)"; ctx.beginPath(); ctx.arc(cx, gy, 1.8, 0, Math.PI * 2); ctx.fill();
+    const gx = X(tgtSide), gy = Y(tgtYd), rx = Math.max(7, 9 + tgtYd / 30) * s, ry = Math.max(6, 8 + tgtYd / 30) * s;
+    ctx.fillStyle = "#3a7a2c"; ctx.beginPath(); ctx.ellipse(gx, gy, rx + 4 * s, ry + 4 * s, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = "#62a84a"; ctx.beginPath(); ctx.ellipse(gx, gy, rx, ry, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = lit ? "#7dd3fc" : "rgba(255,255,255,.3)"; ctx.lineWidth = lit ? 2 : 1; ctx.stroke();
+    ctx.strokeStyle = "#f8fafc"; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.moveTo(gx, gy); ctx.lineTo(gx, gy - 20); ctx.stroke();
+    ctx.fillStyle = "#ef4444"; ctx.beginPath(); ctx.moveTo(gx, gy - 20); ctx.lineTo(gx + 11, gy - 16.5); ctx.lineTo(gx, gy - 13); ctx.fill();
+    ctx.fillStyle = "rgba(0,0,0,.35)"; ctx.beginPath(); ctx.arc(gx, gy, 1.8, 0, Math.PI * 2); ctx.fill();
   }
   ctx.font = "600 11px -apple-system, system-ui, sans-serif"; ctx.textBaseline = "middle";
   for (let d = 25; d <= L; d += 25) {
@@ -2480,7 +2470,7 @@ function draw() {
   }
   ctx.strokeStyle = "rgba(255,255,255,.35)"; ctx.setLineDash([6, 8]); ctx.beginPath(); ctx.moveTo(cx, teeY); ctx.lineTo(cx, Y(L)); ctx.stroke(); ctx.setLineDash([]);
   ctx.fillStyle = "#1f3b19"; ctx.fillRect(cx - 22, teeY - 6, 44, 18); ctx.fillStyle = "#e5e7eb"; ctx.beginPath(); ctx.arc(cx, teeY + 3, 3, 0, Math.PI * 2); ctx.fill();
-  { const t = `${pr ? "Target" : "Green"} ${f0(tgtYd)} yd`; ctx.font = "700 12px -apple-system, system-ui, sans-serif"; const w = ctx.measureText(t).width + 10; label(t, cx - (Math.max(7, 9 + tgtYd / 30) + 4) * s - 8 - w, Y(tgtYd), pr ? "tgt" : "dim"); }
+  { const t = !has ? `Green ${f0(tgtYd)} yd` : a.source === "train" ? `Train ≈ ${f0(tgtYd)} yd` : `Target ${f0(tgtYd)} yd`; ctx.font = "700 12px -apple-system, system-ui, sans-serif"; const w = ctx.measureText(t).width + 10; label(t, X(tgtSide) - (Math.max(7, 9 + tgtYd / 30) + 4) * s - 8 - w, Y(tgtYd), lit ? "tgt" : "dim"); }
   // the grouping: real shots only (not typed in, not left out), one oval per swing length shown
   const groups = (allSwings ? SWINGS.map(([w]) => w) : [curSwing()]).map(w => [w, grouping(cs.filter(([sh]) => !sh.excluded && sh.src !== "manual" && swingOf(sh) === w).map(([, c]) => [c.side, c.carry]))]).filter(([, g]) => g);
   for (const [w, g] of groups) {
@@ -2584,7 +2574,7 @@ async function reload() {
 })();
 addEventListener("pagehide", () => { store && store.flush && store.flush(); });
 document.addEventListener("visibilitychange", () => { if (document.hidden && store && store.flush) store.flush(); });
-window.rangeLab = { S, get store() { return store; }, get info() { return storeInfo; }, record, calc, solve, BANDS, RawTap, live, distData, grouping, viewRect, get browserCopy() { return browserCopy; }, train: () => trainApi };
+window.rangeLab = { S, get store() { return store; }, get info() { return storeInfo; }, record, calc, solve, BANDS, RawTap, live, distData, grouping, viewRect, get browserCopy() { return browserCopy; }, train: () => trainApi, aim: () => aimNow(), aimFrom };
 
 // ------------------------------------------------------------------ Train: games for the measured numbers
 // One number at a time, then two together, in the order that builds a swing: ball speed, start line,
@@ -2723,57 +2713,12 @@ function trainScore(s) {
   if (st.sound) beep(drill.warm ? "warm" : drill.done ? "done" : drill.hit ? "hit" : "miss");
   return true;
 }
-// ---- the other numbers, to go with what you're training
-// For the club in hand and your level (Practice's "Play to", and your own launch angle if you've set
-// one), the same model as practice targets: at a given ball speed, launch is a little higher than a
-// full swing and spin scales with speed. The ball speed comes from the target if you're training
-// speed, from the spin if you're training spin, and otherwise from your last shot with this club.
-// The numbers you're training replace the model's, and the flight is worked out from the lot.
-const guideCache = new Map();
-function trainGuide(st = tState(), g = GAME[st.game], want = wantOf(st, g)) {
-  const p = me(), club = omniClubFor(curClub()), own = launchFor(p, curClub()), band = p.band || "m-10-18";
-  const q = ownProfile(band, club, own);
-  if (!q) return null;
-  let v = want.speed, from = "target";
-  if (v == null && (want.back != null || want.spin != null)) { v = (want.spin != null ? want.spin : want.back) / q.spin * q.ball; from = "spin"; }
-  if (v == null) {
-    const last = S.shots.filter(s => s.player === p.id && s.club === curClub() && s.src !== "manual").pop();
-    v = last ? last.ball.speedMph : q.ball; from = last ? "last" : "full";
-  }
-  v = Math.max(3, v);
-  const k = JSON.stringify([band, club, own, Math.round(v * 10), want]);
-  if (guideCache.has(k)) return guideCache.get(k);
-  const sh = BANDS.shotAt(q, v), deg = Math.PI / 180;
-  const total = want.spin != null ? want.spin : want.back != null ? Math.hypot(want.back, want.side || 0) : sh.spinRpm;
-  const axis = want.axis != null ? want.axis : want.side != null ? Math.atan2(want.side, want.back != null ? want.back : total) / deg : 0;
-  const ball = { speedMph: v, vla: want.launch != null ? want.launch : sh.vla, hla: want.dir != null ? want.dir : 0, spinRpm: total, axisDeg: axis };
-  let flight = null;
-  try {
-    const r = OG.simulate(ball, { course: FLAT, start: [0, 0, 0], aimYaw: 0, dt: 0.002 });
-    flight = { carry: r.carry / YD, total: r.total / YD, apex: r.apex / YD, descent: r.landAngle };
-  } catch {}
-  const out = { from, club, band, own, ball, back: total * Math.cos(axis * deg), side: total * Math.sin(axis * deg), clubMph: q.club * v / q.ball, swing: v / q.ball, flight };
-  guideCache.set(k, out);
-  return out;
-}
-// what the live bar asks for while a game is on: the targets you're training (scored), and the
-// guide's numbers for the rest (not scored, marked ≈)
-function trainNeeds() {
-  const st = tState();
-  if (!st.on) return null;
-  const g = GAME[st.game], want = wantOf(st, g), tol = st.warm > 0 ? {} : tolsFor(st, want), m = {};
-  const gd = trainGuide(st, g, want);
-  if (gd) {
-    const b = gd.ball;
-    for (const [k, v] of [["speed", b.speedMph], ["launch", b.vla], ["dir", b.hla], ["spin", b.spinRpm], ["axis", b.axisDeg], ["back", gd.back], ["side", gd.side]]) m[k] = { want: v, guide: true };
-  }
-  for (const k of Object.keys(want)) m[k] = { want: want[k], tol: tol[k] || null };
-  return { from: `Train: ${g.name}`, m, game: true, carry: gd && gd.flight ? gd.flight.carry : null, carryGuide: true };
-}
+// ---- the other numbers, to go with what you're training: worked out by the aim (src/aim.js), which the
+// centre follows whenever you're in Train. Shown in words on the game card.
 function guideText(gd) {
-  if (!gd) return "";
+  if (!gd || !gd.ok) return "";
   const f = gd.flight, b = gd.ball;
-  return `${esc(SHORT[gd.club] || gd.club)} at ${f1(b.speedMph)} mph: launch ≈ ${f1(b.vla)}°, spin ≈ ${f0(b.spinRpm)} rpm, club ≈ ${f1(gd.clubMph)} mph (${f0(gd.swing * 100)}% of a full swing)${f ? `, carry ≈ ${f0(f.carry)} yd, apex ≈ ${f1(f.apex)} yd, descent ≈ ${f0(f.descent)}°` : ""}`;
+  return `${esc(SHORT[gd.pclub] || gd.pclub)} at ${f1(b.speedMph)} mph: launch ≈ ${f1(b.vla)}°, spin ≈ ${f0(b.spinRpm)} rpm, club ≈ ${f1(gd.clubMph)} mph (${f0(gd.swing * 100)}% of a full swing)${f ? `, carry ≈ ${f0(f.carry)} yd, apex ≈ ${f1(f.apex)} yd, descent ≈ ${f0(f.descent)}°` : ""}`;
 }
 
 // ---- a little sound: on by default, and only after you've pressed Start (browsers need a tap first)
@@ -2815,8 +2760,8 @@ function renderGame() {
       <span class="gm-tol">${Object.keys(want).map(k => tolText(k, tol[k], want[k])).join(" · ")}</span>
       <span class="gm-dots" aria-label="${streak} of ${st.goal} in a row">${Array.from({ length: st.goal }, (_, i) => `<i class="${i < streak ? "on" : ""}"></i>`).join("")}</span></div>`;
   }
-  const gd = trainGuide(st, g, want);
-  if (gd) h += `<div class="gm-guide">What goes with it: ${guideText(gd)}</div>`;
+  const a = aimNow(), gd = a && a.source === "train" ? a.r : null;
+  if (gd && gd.ok) h += `<div class="gm-guide">What goes with it: ${guideText(gd)}</div>`;
   const idx = main.ladder.indexOf(want[g.main]), next = idx >= 0 && idx < main.ladder.length - 1 ? main.ladder[idx + 1] : null;
   if (d && d.done && !d.testRun && st.warm === 0) {
     const info = levelInfo(g.id, want), took = info.done.length ? info.done[info.done.length - 1].shots : null;
@@ -2857,10 +2802,10 @@ function renderTrain() {
   }).join("")}</div>
     <div class="row"><label class="muted" for="tOther">Other</label><input type="number" id="tOther" inputmode="decimal" step="${main.step}" value="${main.ladder.includes(want[g.main]) ? "" : want[g.main]}" placeholder="${main.unit}" style="width:90px"></div>`;
   if (g.also) h += `<div class="note">And at the same time: ${Object.keys(g.also).map(k => `${METRICS[k].name.toLowerCase()} ${METRICS[k].val(g.also[k])}`).join(", ")}.</div>`;
-  const gd = trainGuide(st, g, want), bandInfo = BANDS.byId[p.band || "m-10-18"];
-  if (gd) {
+  const a = aimNow(), gd = a && a.source === "train" ? a.r : null, bandInfo = BANDS.byId[p.band || "m-10-18"];
+  if (gd && gd.ok) {
     const b = gd.ball, f = gd.flight || {}, mark = k => (k in want ? "need" : "guide");
-    h += `<div class="sec"><div class="sec-h"><span class="badge tgt">What you need</span><span class="sec-note">${{ target: "", spin: "ball speed from the spin target, ", last: "ball speed from your last shot with this club, ", full: "a full swing (no shots with this club yet), " }[gd.from]}for a ${esc(bandInfo ? bandInfo.label : gd.band)} ${esc(gd.club)}${gd.own != null ? `, launching at ${esc(p.name)}'s own ${f1(gd.own)}°` : ""}. ≈ means a guide, not scored</span></div>
+    h += `<div class="sec"><div class="sec-h"><span class="badge tgt">What you need</span><span class="sec-note">${{ speed: "", spin: "ball speed from the spin target, ", last: "ball speed from your last shot with this club, ", full: "a full swing (no shots with this club yet), " }[gd.from] || ""}for a ${esc(bandInfo ? bandInfo.label : gd.band)} ${esc(gd.pclub)}${gd.own != null ? `, launching at ${esc(p.name)}'s own ${f1(gd.own)}°` : ""}. ≈ means a guide, not scored</span></div>
       <div class="grid">${tile(mark("speed"), "Ball speed", ("speed" in want ? "" : "≈") + f1(b.speedMph), "mph")}${tile(mark("launch"), "Launch", ("launch" in want ? "" : "≈") + f1(b.vla), "°")}${tile(mark("spin") === "need" || "back" in want ? "need" : "guide", "Spin", ("spin" in want ? "" : "≈") + f0(b.spinRpm), "rpm")}${tile(mark("dir"), "Direction", ("dir" in want ? "" : "≈") + lr(b.hla, "°"))}${tile("guide", "Club speed", "≈" + f1(gd.clubMph), "mph")}${tile("guide", "Swing", "≈" + f0(gd.swing * 100), "% of full")}${tile("guide", "Carry / total", `≈${f0(f.carry)} / ${f0(f.total)}`, "yd", true)}${tile("guide", "Apex / descent", `≈${f1(f.apex)} / ${f0(f.descent)}`, "yd / °", true)}${tile(mark("axis") === "need" || "side" in want ? "need" : "guide", "Back / side", `${"back" in want ? "" : "≈"}${f0(gd.back)} / ${lrInt(gd.side, "")}`, "rpm", true)}</div>
       <div class="note">Change the level in Practice ("Play to"), or set your own launch angle for this club in Player.</div></div>`;
   }
@@ -2903,6 +2848,104 @@ function rangeText(k, tol, want) {
   return m.unit === "rpm" ? `${f0(lo)}–${f0(hi)} rpm` : `${f1(lo)}–${f1(hi)}${m.unit === "°" ? "°" : " " + m.unit}`;
 }
 const trainApi = { METRICS, GAMES, state: tState, save: tSave, levelInfo, mineTol, drillShots };
+
+// ------------------------------------------------------------------ the aim: what the centre shows
+// One place for the numbers you're aiming for. Practice and Train only say what you picked (aimSpec):
+// Practice a carry; Train a ball speed, launch, direction or spin. aimFrom() works out every other number
+// from that with one model (your "Play to" level, club and own launch angle), and aimNow() is the answer
+// that everything shows: the live bar's need lines, the range's green, the Practice and Train tabs, the
+// game card, the test-shot sheet and the target saved with each practice shot.
+//
+// Which one the centre follows: Train while a game is on, otherwise whichever of the Practice and Train
+// tabs you opened last (the other tabs leave it be). It's remembered in this browser.
+const PRACTICE_TOL = { speed: ["pct", 5], launch: ["abs", 1.5], dir: ["abs", 2], spin: ["pct", 10], axis: ["abs", 3] };
+let aimMode = lsGet("omniRangeLab:aim") === "train" ? "train" : "practice";
+const aim = () => (S.players.length && tState().on ? "train" : aimMode);
+function setAim(t) { if (t !== aimMode) { aimMode = t; lsSet("omniRangeLab:aim", t); } }
+
+// want: any of carry (yd), speed (mph), launch, dir, axis (°), spin, back, side (rpm).
+// The ball speed is solved from the carry, or is the speed you picked, or follows from the spin you
+// picked, or else is your last real shot with this club (a full swing if there isn't one): a launch angle
+// or direction on its own needs a ball speed to go with it. The numbers you picked replace the model's,
+// and the flight is worked out from the lot.
+// Returns { ok, club, pclub (the profile's club), band, own (launch), from (where the ball speed came
+// from: carry, speed, spin, last, full), ball, back, side, clubMph, swing (of a full one), flight }, or
+// { ok: false, tooFar, max, tooShort, min } for a carry the club can't reach, or null.
+const aimCache = new Map();
+function aimFrom(want, { p = me(), club = curClub() } = {}) {
+  if (!p || (club === DIAG && want.carry != null)) return null; // "Any club" has no typical carry
+  const pclub = omniClubFor(club), band = p.band || "m-10-18", own = launchFor(p, club), q = ownProfile(band, pclub, own);
+  if (!q) return null;
+  let v = want.speed, from = "speed", sol = null;
+  if (want.carry != null) {
+    sol = solve(band, pclub, want.carry, own);
+    if (!sol) return null;
+    if (!sol.ok) return { ok: false, club, pclub, band, own, tooFar: !!sol.tooFar, max: sol.max, tooShort: !!sol.tooShort, min: sol.min };
+    v = sol.shot.speedMph; from = "carry";
+  } else if (v == null && (want.spin != null || want.back != null)) {
+    v = (want.spin != null ? want.spin : want.back) / q.spin * q.ball; from = "spin";
+  } else if (v == null) {
+    const last = S.shots.filter(s => s.player === p.id && s.club === club && s.src !== "manual").pop();
+    v = last ? last.ball.speedMph : q.ball; from = last ? "last" : "full";
+  }
+  v = Math.max(3, v);
+  const k = JSON.stringify([band, club, own, Math.round(v * 10), want]);
+  if (aimCache.has(k)) return aimCache.get(k);
+  const sh = sol ? sol.shot : BANDS.shotAt(q, v), deg = Math.PI / 180;
+  const total = want.spin != null ? want.spin : want.back != null ? Math.hypot(want.back, want.side || 0) : sh.spinRpm;
+  const axis = want.axis != null ? want.axis : want.side != null ? Math.atan2(want.side, want.back != null ? want.back : total) / deg : 0;
+  const ball = { speedMph: sh.speedMph, vla: want.launch != null ? want.launch : sh.vla, hla: want.dir != null ? want.dir : 0, spinRpm: total, axisDeg: axis };
+  let flight = null;
+  try {
+    const r = OG.simulate(ball, { course: FLAT, start: [0, 0, 0], aimYaw: 0, dt: 0.002 }), land = r.landing || r.final;
+    flight = { carry: r.carry / YD, total: r.total / YD, apex: r.apex / YD, descent: r.landAngle, side: land ? -land[0] / YD : 0 };
+  } catch {}
+  const out = { ok: true, club, pclub, band, own, from, ball, back: total * Math.cos(axis * deg), side: total * Math.sin(axis * deg),
+    clubMph: sol ? sol.clubMph : q.club * v / q.ball, swing: sol ? sol.swing : v / q.ball, flight };
+  aimCache.set(k, out);
+  return out;
+}
+
+// What you've picked in the mode the centre follows. needs: the numbers that are scored once it's started
+// (Practice: the five it solved for; Train: the ones you're training), with their tolerances.
+function aimSpec() {
+  if (!S.players.length) return null;
+  const p = me();
+  if (aim() === "train") {
+    const st = tState(), g = GAME[st.game], want = wantOf(st, g);
+    return { source: "train", want, on: !!st.on, needs: Object.keys(want), tol: st.on && st.warm > 0 ? {} : tolsFor(st, want),
+      label: `Train · ${Object.keys(want).map(k => METRICS[k].val(want[k])).join(", ")}` };
+  }
+  if (!(p.practiceYd > 0)) return null;
+  return { source: "practice", want: { carry: p.practiceYd, dir: 0, axis: 0 }, on: !!p.practiceOn, needs: Object.keys(PRACTICE_TOL), tol: PRACTICE_TOL,
+    label: `Target ${f0(p.practiceYd)} yd` };
+}
+
+// The current aim: aimSpec, everything aimFrom works out from it (r), and what the live bar shows (m):
+// for each number { want, tol } once it's started (scored, coloured in or out), or { want, guide: true }
+// (≈, just what goes with it). carry: where the green goes; side: how far right of the line it lands.
+let aimMemo = { key: null, val: null };
+function aimNow() {
+  const spec = aimSpec();
+  if (!spec) return null;
+  const p = me(), key = JSON.stringify([spec, p.id, curClub(), p.band, launchFor(p, curClub()), S.shots.length]);
+  if (aimMemo.key === key) return aimMemo.val;
+  const r = aimFrom(spec.want), m = {}, ok = !!(r && r.ok);
+  if (ok) {
+    const b = r.ball;
+    for (const [k, v] of [["speed", b.speedMph], ["launch", b.vla], ["dir", b.hla], ["spin", b.spinRpm], ["axis", b.axisDeg], ["back", r.back], ["side", r.side]]) m[k] = { want: v, guide: true };
+  }
+  for (const k of spec.needs) {
+    const want = k in spec.want ? spec.want[k] : m[k] && m[k].want;
+    if (want != null) m[k] = spec.on ? { want, tol: spec.tol[k] || null } : { want, guide: true };
+  }
+  const f = ok ? r.flight : null;
+  const val = { ...spec, r, ok, m, text: spec.label + (spec.on ? "" : " (not started)"),
+    carry: spec.want.carry != null ? spec.want.carry : f ? f.carry : null, carryGuide: spec.source === "train" || !spec.on,
+    side: spec.source === "train" && f ? f.side : 0 };
+  aimMemo = { key, val };
+  return val;
+}
 
 </script>
 </body>
