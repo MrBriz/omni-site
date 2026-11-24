@@ -81,8 +81,10 @@
   .tolrow button .muted { margin-left: 5px; font-weight: 500; }
   table.trainlog td.hit { color: #86efac; } table.trainlog td.miss { color: #fca5a5; } table.trainlog td.warm { color: #93c5fd; }
   .muted { opacity: .6; font-size: 12.5px; }
-  #panel { position: fixed; left: 10px; right: 10px; bottom: max(10px, env(safe-area-inset-bottom)); margin: 0 auto; max-width: 860px; background: var(--glass); border: 1px solid var(--line); border-radius: 16px; padding: 8px 12px 10px; backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); max-height: 46vh; overflow: auto; box-sizing: border-box; }
-  @media (min-width: 1000px) { #panel { left: auto; right: 10px; top: 10px; bottom: auto; width: 460px; max-width: none; max-height: calc(100vh - 20px); margin: 0; } #hud { right: 490px; } }
+  #panel { position: fixed; left: 10px; right: 10px; bottom: max(10px, env(safe-area-inset-bottom)); margin: 0 auto; max-width: 860px; background: var(--glass); border: 1px solid var(--line); border-radius: 16px; padding: 8px 12px 10px; backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); max-height: 46vh; max-height: calc(var(--appH, 100dvh) * 0.46); overflow-y: auto; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; touch-action: pan-y; box-sizing: border-box; }
+  /* --appH is the height you can actually see (set from innerHeight): in iPad Safari, and in a Stage Manager
+     window especially, 100vh is taller than that, so the panel ran off the bottom and couldn't scroll */
+  @media (min-width: 1000px) { #panel { left: auto; right: 10px; top: 10px; bottom: auto; width: 460px; max-width: none; max-height: calc(100vh - 20px); max-height: calc(var(--appH, 100dvh) - 20px); margin: 0; } #hud { right: 490px; } }
   .tabs { display: flex; gap: 5px; margin-bottom: 6px; }
   .tabs button { flex: 1; padding: 6px 2px; font-size: 12.5px; min-width: 0; }
   @media (max-width: 600px) { .tabs { gap: 4px; flex-wrap: wrap; } .tabs button { font-size: 12px; flex: 1 0 22%; } }
@@ -150,7 +152,7 @@
   .rm { font-size: 11.5px; opacity: .7; margin-top: 2px; }
   #dlg { position: fixed; inset: 0; background: rgba(0,0,0,.5); display: none; align-items: center; justify-content: center; z-index: 10; }
   #dlg.show { display: flex; }
-  .sheet { background: #0f1a14; border: 1px solid var(--line); border-radius: 16px; padding: 14px 16px; width: min(440px, calc(100vw - 24px)); max-height: 85vh; overflow: auto; box-sizing: border-box; }
+  .sheet { background: #0f1a14; border: 1px solid var(--line); border-radius: 16px; padding: 14px 16px; width: min(440px, calc(100vw - 24px)); max-height: 85vh; max-height: calc(var(--appH, 100dvh) * 0.85); overflow: auto; -webkit-overflow-scrolling: touch; box-sizing: border-box; }
   .sheet h2 { font-size: 16px; margin: 0 0 8px; }
   .sheet .fields { display: grid; grid-template-columns: repeat(auto-fill, minmax(118px, 1fr)); gap: 8px; margin: 8px 0; }
   .sheet .fields input { width: 100%; }
@@ -2427,8 +2429,11 @@ async function unzipFirst(b, re) {
 
 // ------------------------------------------------------------------ drawing the range
 const cv = $("c"), ctx = cv.getContext("2d");
-function resize() { const d = Math.min(2, window.devicePixelRatio || 1); cv.width = Math.round(innerWidth * d); cv.height = Math.round(innerHeight * d); ctx.setTransform(d, 0, 0, d, 0, 0); draw(); }
+function resize() {
+  document.documentElement.style.setProperty("--appH", `${innerHeight}px`); // the panel's height: see --appH in index.html
+  const d = Math.min(2, window.devicePixelRatio || 1); cv.width = Math.round(innerWidth * d); cv.height = Math.round(innerHeight * d); ctx.setTransform(d, 0, 0, d, 0, 0); draw(); }
 addEventListener("resize", resize);
+if (window.visualViewport) visualViewport.addEventListener("resize", resize); // Safari's toolbars coming and going
 function viewRect() {
   const W = innerWidth, H = innerHeight, hud = $("hud").getBoundingClientRect(), p = $("panel").getBoundingClientRect();
   const r = { x: 0, y: hud.bottom + 4, w: W, h: H - hud.bottom - 4 };
