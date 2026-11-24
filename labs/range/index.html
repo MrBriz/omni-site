@@ -29,18 +29,63 @@
   .chip.diag { border-style: dashed; }
   .chip.diag.sel { background: #713f12; border-color: var(--warn); border-style: solid; }
   /* the measured strip: the Omni's real numbers, front and centre */
-  #live { gap: 12px; overflow-x: auto; scrollbar-width: none; min-height: 34px; box-sizing: border-box; }
+  #live { gap: 4px 12px; flex-wrap: wrap; min-height: 34px; box-sizing: border-box; }
   #live::-webkit-scrollbar { display: none; }
   .lv { display: flex; flex-direction: column; line-height: 1.1; white-space: nowrap; font-size: 12px; }
   .lv .lk { font-size: 10px; opacity: .65; text-transform: uppercase; letter-spacing: .05em; }
   .lv b { font-size: 17px; }
   .lv.calcv { opacity: .7; font-size: 13px; border-left: 1px dashed rgba(255,255,255,.3); padding-left: 10px; }
   .lv.tgt { color: #bae6fd; border-left: 1px solid rgba(125,211,252,.4); padding-left: 10px; font-size: 13px; }
+  .lv .need { font-size: 11px; color: #bae6fd; opacity: .9; margin-top: 1px; }
+  .lv.in b { color: #86efac; } .lv.out b { color: #fcd34d; }
+  .lv.calcv .need { color: #bae6fd; }
+  button.mini.tog { margin-left: auto; flex: none; font-size: 11.5px; padding: 4px 8px; }
+  button.tog.sel { border-color: var(--tgt); color: #e0f2fe; background: #0c4a6e; }
+  .tile.plain { border: 1px solid var(--line); background: rgba(255,255,255,.04); }
+  /* the side view of the flight, under the live bar */
+  .bar.prof { padding: 4px 6px; }
+  .bar.prof[hidden] { display: none; }
+  #sideMain { width: 100%; height: 110px; display: block; }
+  @media (max-width: 600px) { #sideMain { height: 80px; } }
+  /* hiding the panel (the Panel button in the top bar) */
+  #panelBtn { flex: none; }
+  body.nopanel #panel { display: none; }
+  @media (min-width: 1000px) { body.nopanel #hud { right: 10px; } }
+  /* a Train game in play: the card under the live bar */
+  .bar.game { flex-direction: column; align-items: stretch; gap: 4px; border-color: var(--tgt); padding: 8px 10px; }
+  .bar.game[hidden] { display: none; }
+  .bar.game.done { border-color: #facc15; background: rgba(66, 50, 6, .82); }
+  .gm-top { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+  .gm-name { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; opacity: .7; }
+  .gm-want { font-size: 22px; font-weight: 800; color: #e0f2fe; font-variant-numeric: tabular-nums; }
+  .gm-tol { font-size: 12.5px; opacity: .75; }
+  .gm-dots { display: flex; gap: 6px; margin-left: auto; align-items: center; }
+  .gm-dots i { width: 16px; height: 16px; border-radius: 50%; border: 2px solid rgba(255,255,255,.45); display: inline-block; }
+  .gm-dots i.on { background: #86efac; border-color: #86efac; }
+  .gm-dots i.warm { border-style: dashed; }
+  .gm-dots i.warm.on { background: #93c5fd; border-color: #93c5fd; }
+  .gm-last { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; font-size: 14px; }
+  .gm-last .v { font-size: 20px; font-weight: 800; font-variant-numeric: tabular-nums; }
+  .gm-last .hit { color: #86efac; font-weight: 700; } .gm-last .miss { color: #fca5a5; font-weight: 700; }
+  .gm-last .btns { margin-left: auto; display: flex; gap: 6px; }
+  .gm-done { font-size: 18px; font-weight: 800; color: #fde68a; }
+  /* the Train tab */
+  .games { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
+  .games button { display: block; white-space: normal; text-align: left; padding: 6px 8px; font-size: 12.5px; line-height: 1.2; }
+  .games button .st { display: block; font-size: 10.5px; opacity: .65; margin-top: 2px; }
+  .games button .no { opacity: .55; margin-right: 4px; font-variant-numeric: tabular-nums; }
+  .tladder { display: flex; flex-wrap: wrap; gap: 5px; }
+  .tladder button { min-width: 44px; padding: 6px 6px 4px; font-variant-numeric: tabular-nums; position: relative; }
+  .tladder button .md { display: block; font-size: 9px; letter-spacing: 1px; color: #facc15; height: 10px; line-height: 10px; }
+  .tolrow { display: flex; flex-wrap: wrap; gap: 5px; align-items: center; }
+  .tolrow button .muted { margin-left: 5px; font-weight: 500; }
+  table.trainlog td.hit { color: #86efac; } table.trainlog td.miss { color: #fca5a5; } table.trainlog td.warm { color: #93c5fd; }
   .muted { opacity: .6; font-size: 12.5px; }
   #panel { position: fixed; left: 10px; right: 10px; bottom: max(10px, env(safe-area-inset-bottom)); margin: 0 auto; max-width: 860px; background: var(--glass); border: 1px solid var(--line); border-radius: 16px; padding: 8px 12px 10px; backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); max-height: 46vh; overflow: auto; box-sizing: border-box; }
   @media (min-width: 1000px) { #panel { left: auto; right: 10px; top: 10px; bottom: auto; width: 460px; max-width: none; max-height: calc(100vh - 20px); margin: 0; } #hud { right: 490px; } }
   .tabs { display: flex; gap: 5px; margin-bottom: 6px; }
-  .tabs button { flex: 1; padding: 6px 4px; font-size: 12.5px; }
+  .tabs button { flex: 1; padding: 6px 2px; font-size: 12.5px; min-width: 0; }
+  @media (max-width: 600px) { .tabs { gap: 4px; flex-wrap: wrap; } .tabs button { font-size: 12px; flex: 1 0 22%; } }
   .pane { display: none; } .pane.show { display: block; }
   h3 { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; opacity: .7; margin: 12px 0 6px; font-weight: 600; }
   .head { font-size: 13px; opacity: .9; margin: 2px 0 2px; } .head b { color: #bbf7d0; }
@@ -154,17 +199,20 @@
 <canvas id="c"></canvas>
 
 <div id="hud">
-  <div class="bar"><span id="title">Range Lab</span><div class="chips" id="players"></div><button id="addPlayer" title="Add a player">+<span class="wide">&nbsp;Player</span></button><button id="conn">Connect</button></div>
+  <div class="bar"><span id="title">Range Lab</span><div class="chips" id="players"></div><button id="addPlayer" title="Add a player">+<span class="wide">&nbsp;Player</span></button><button id="conn">Connect</button><button id="panelBtn" class="tog" aria-pressed="true" title="Show or hide the panel, to see more of the range">Panel</button></div>
   <div class="bar"><span class="lbl">Club</span><div class="chips" id="clubs"></div><div class="seg" id="swings" role="group" aria-label="Swing length"></div></div>
   <div class="bar" id="live"></div>
+  <div class="bar game" id="game" hidden></div>
+  <div class="bar prof" id="profBar"><canvas id="sideMain"></canvas></div>
 </div>
 
 <div id="panel">
-  <div class="tabs"><button id="tShot" class="sel">Shot</button><button id="tShots">Shots</button><button id="tDist">Distances</button><button id="tPractice">Practice</button><button id="tRaw">Raw</button><button id="tPlayer">Player</button></div>
+  <div class="tabs"><button id="tShot" class="sel">Shot</button><button id="tShots">Shots</button><button id="tDist">Distances</button><button id="tPractice">Practice</button><button id="tTrain">Train</button><button id="tRaw">Raw</button><button id="tPlayer">Player</button></div>
   <div class="pane show" id="pShot"></div>
   <div class="pane" id="pShots"></div>
   <div class="pane" id="pDist"></div>
   <div class="pane" id="pPractice"></div>
+  <div class="pane" id="pTrain"></div>
   <div class="pane" id="pRaw"></div>
   <div class="pane" id="pPlayer"></div>
 </div>
@@ -1336,7 +1384,7 @@ const num = v => (v == null || v === "" || !isFinite(+v) ? null : +v);
 
 function shotToRow(s) {
   const r = { id: s.id, player_id: s.player, club: s.club, swing: swingId(s.swing), excluded: s.excluded ? 1 : 0, source: s.src, ts: s.ts, app_carry_yd: num(s.app),
-    target_yd: s.target ? num(s.target.yd) : null, target_band: s.target ? s.target.band : null,
+    target_yd: s.target ? num(s.target.yd) : null, target_band: (s.target && s.target.band) || null, // a Train game's target has no band; sql.js can't store undefined
     target_json: s.target ? JSON.stringify(s.target) : null };
   for (const [k, c] of BALL_COLS) r[c] = num(s.ball && s.ball[k]);
   for (const [k, c] of CLUB_COLS) r[c] = num(s.cd && s.cd[k]);
@@ -1668,20 +1716,56 @@ function renderHUD() {
   const b = $("conn"); b.textContent = connStatus.text; b.className = connStatus.cls;
   renderLive();
 }
-function renderLive() {
-  const el = $("live"), s = selected(), pr = practice();
-  let h = "";
-  if (s) {
-    const b = s.ball, c = calc(s);
-    h += `<span class="badge ${s.src === "manual" ? "test" : "meas"}">${s.src === "manual" ? "Test shot" : s.src === "frp" ? "flighthook" : s.src === "relay" ? "Omni · relay" : "Omni"}</span>`;
-    h += [["Ball", f1(b.speedMph), " mph"], ["Launch", f1(b.vla), "°"], ["Direction", lr(b.hla, "°"), ""], ["Spin", f0(b.spinRpm), " rpm"], ["Axis", lr(b.axisDeg, "°"), ""]]
-      .map(([k, v, u]) => `<span class="lv"><span class="lk">${k}</span><span><b>${v}</b>${u}</span></span>`).join("");
-    if (c) h += `<span class="lv calcv"><span class="lk">Carry</span>≈ ${f1(c.carry)} yd</span>`;
-  } else h += `<span class="muted">Waiting for a shot. The Omni's measured numbers appear here first.</span>`;
-  if (conn && conn.kind === "relay" && squareClub) h += `<span class="lv calcv"><span class="lk">Square app</span>${esc(squareClub)}</span>`;
-  if (pr && pr.sol) h += `<span class="lv tgt"><span class="lk">Target ${f0(pr.yd)} yd</span>${pr.sol.ok ? `${f1(pr.sol.shot.speedMph)} mph · ${f1(pr.sol.shot.vla)}° · ${f0(pr.sol.shot.spinRpm)} rpm` : "out of range"}</span>`;
-  el.innerHTML = h;
+// What the live bar asks for under each number: a Train game's targets if one is on, otherwise the
+// practice target's (straight, with the speed, launch and spin needed for the distance).
+// Each entry: { want, tol: [kind, value] } with kind "pct" (of want) or "abs"; carry: yards wanted.
+function needs() {
+  const g = typeof trainNeeds === "function" ? trainNeeds() : null;
+  if (g) return g;
+  const pr = practice();
+  if (!pr || !pr.sol || !pr.sol.ok) return null;
+  const n = pr.sol.shot;
+  return { from: `Target ${f0(pr.yd)} yd`, m: { speed: { want: n.speedMph, tol: ["pct", 5] }, launch: { want: n.vla, tol: ["abs", 1.5] }, dir: { want: 0, tol: ["abs", 2] },
+    spin: { want: n.spinRpm, tol: ["pct", 10] }, axis: { want: 0, tol: ["abs", 3] } }, carry: pr.yd };
 }
+const within = (v, nd) => v != null && isFinite(v) && Math.abs(v - nd.want) <= (nd.tol[0] === "pct" ? Math.abs(nd.want) * nd.tol[1] / 100 : nd.tol[1]);
+const backOf = b => b.backSpin != null ? b.backSpin : b.spinRpm * Math.cos(b.axisDeg * Math.PI / 180);
+const sideOf = b => b.sideSpin != null ? b.sideSpin : b.spinRpm * Math.sin(b.axisDeg * Math.PI / 180);
+// [metric, label, value of a ball, how to show it, unit]
+const LIVE = [["speed", "Ball", b => b.speedMph, f1, " mph"], ["launch", "Launch", b => b.vla, f1, "°"], ["dir", "Direction", b => b.hla, v => lr(v, "°"), ""],
+  ["spin", "Spin", b => b.spinRpm, f0, " rpm"], ["axis", "Axis", b => b.axisDeg, v => lr(v, "°"), ""], ["back", "Back", backOf, f0, ""], ["side", "Side", sideOf, v => lr(v), ""]];
+function renderLive() {
+  const el = $("live"), s = selected(), nd = needs();
+  let h = "";
+  if (s) h += `<span class="badge ${s.src === "manual" ? "test" : "meas"}">${s.src === "manual" ? "Test shot" : s.src === "frp" ? "flighthook" : s.src === "relay" ? "Omni · relay" : "Omni"}</span>`;
+  else if (!nd) h += `<span class="muted">Waiting for a shot. The Omni's measured numbers appear here first.</span>`;
+  if (s || nd) {
+    const b = s && s.ball, c = s && calc(s);
+    for (const [k, label, get, fmt, u] of LIVE) {
+      const n = nd && nd.m[k], v = b ? get(b) : null;
+      if (!b && !n) continue;
+      const cls = n && n.tol && b ? (within(v, n) ? " in" : " out") : ""; // no tolerance yet during a warm-up
+      h += `<span class="lv${cls}"><span class="lk">${label}</span><span><b>${b ? fmt(v) : "–"}</b>${b ? u : ""}</span>${n ? `<span class="need">need ${fmt(n.want)}${n.tol ? ` ±${n.tol[0] === "pct" ? n.tol[1] + "%" : n.tol[1]}` : ""}</span>` : ""}</span>`;
+    }
+    h += `<span class="lv calcv"><span class="lk">Carry</span><span>≈ ${f1(c && c.carry)} yd</span>${nd && nd.carry ? `<span class="need">need ${f0(nd.carry)}</span>` : ""}</span>`;
+    h += `<span class="lv calcv"><span class="lk">Total</span><span>≈ ${f1(c && c.total)} yd</span></span>`;
+  }
+  if (nd && nd.from) h += `<span class="lv tgt"><span class="lk">Aiming for</span>${esc(nd.from)}</span>`;
+  if (conn && conn.kind === "relay" && squareClub) h += `<span class="lv calcv"><span class="lk">Square app</span>${esc(squareClub)}</span>`;
+  h += `<button class="mini tog${sideOn ? " sel" : ""}" id="bSide" aria-pressed="${sideOn}" title="Show the side view of the flight under this bar">Side view</button>`;
+  el.innerHTML = h;
+  $("bSide").onclick = () => { sideOn = !sideOn; lsSet("omniRangeLab:sideMain", sideOn ? "1" : "0"); layout(); };
+}
+// the side view under the live bar, and hiding the panel: both give the range view back its room
+// the side view starts off on a phone, where the panel already takes half the screen
+let sideOn = lsGet("omniRangeLab:sideMain") != null ? lsGet("omniRangeLab:sideMain") === "1" : innerWidth > 600, panelOn = lsGet("omniRangeLab:panel") !== "0";
+function layout() {
+  $("profBar").hidden = !sideOn;
+  document.body.classList.toggle("nopanel", !panelOn);
+  const b = $("panelBtn"); b.classList.toggle("sel", panelOn); b.setAttribute("aria-pressed", panelOn);
+  renderLive(); resize();
+}
+$("panelBtn").onclick = () => { panelOn = !panelOn; lsSet("omniRangeLab:panel", panelOn ? "1" : "0"); layout(); };
 $("players").onclick = e => { const b = e.target.closest("[data-p]"); if (b) switchPlayer(b.dataset.p); };
 $("clubs").onclick = e => { const b = e.target.closest("[data-c]"); if (b) switchClub(b.dataset.c); };
 $("swings").onclick = e => { const b = e.target.closest("[data-w]"); if (b) switchSwing(b.dataset.w); };
@@ -1702,13 +1786,13 @@ function tellOmni() {
 }
 
 // ------------------------------------------------------------------ tabs
-const TABS = [["shot", "tShot", "pShot"], ["shots", "tShots", "pShots"], ["dist", "tDist", "pDist"], ["practice", "tPractice", "pPractice"], ["raw", "tRaw", "pRaw"], ["player", "tPlayer", "pPlayer"]];
+const TABS = [["shot", "tShot", "pShot"], ["shots", "tShots", "pShots"], ["dist", "tDist", "pDist"], ["practice", "tPractice", "pPractice"], ["train", "tTrain", "pTrain"], ["raw", "tRaw", "pRaw"], ["player", "tPlayer", "pPlayer"]];
 function showTab(t) { tab = t; for (const [k, b, p] of TABS) { $(b).classList.toggle("sel", k === t); $(p).classList.toggle("show", k === t); } renderPanel(); }
 for (const [k, b] of TABS) $(b).onclick = () => showTab(k);
 function selected() { const list = viewShots(); return (selId && list.find(x => x.id === selId)) || list[list.length - 1] || null; }
 function renderPanel() {
-  if (tab === "shot") renderShot(); else if (tab === "shots") renderShots(); else if (tab === "dist") renderDist(); else if (tab === "practice") renderPractice(); else if (tab === "raw") renderRaw(); else renderPlayer();
-  draw();
+  if (tab === "shot") renderShot(); else if (tab === "shots") renderShots(); else if (tab === "dist") renderDist(); else if (tab === "practice") renderPractice(); else if (tab === "train") renderTrain(); else if (tab === "raw") renderRaw(); else renderPlayer();
+  renderGame(); draw();
 }
 function renderAll() { renderHUD(); renderPanel(); }
 
@@ -1839,7 +1923,7 @@ function avgTile(cls, k, st, d, u, kind) {
 }
 function distData(pid = S.current, period = distPeriod) {
   const p = S.players.find(x => x.id === pid), t0 = periodStart(period);
-  const pool = S.shots.filter(s => s.player === pid && s.club !== DIAG && s.src !== "manual" && s.ts >= t0);
+  const pool = S.shots.filter(s => s.player === pid && s.club !== DIAG && s.src !== "manual" && s.ts >= t0 && !(s.target && s.target.drill));
   const clubs = CLUBS.filter(c => pool.some(s => s.club === c));
   const cells = {};
   for (const c of clubs) for (const [w] of SWINGS) {
@@ -2061,6 +2145,7 @@ function record(ball, cd, src) {
   if (pkt) { s.ball.backSpin = pkt.decoded.fields.backSpinRpm; s.ball.sideSpin = pkt.decoded.fields.sideSpinRpm; }
   const pr = practice();
   if (pr && pr.sol && pr.sol.ok) s.target = { yd: pr.yd, band: pr.band, club: pr.club, ...(pr.launch != null ? { launch: pr.launch } : {}), need: { speedMph: pr.sol.shot.speedMph, vla: pr.sol.shot.vla, spinRpm: pr.sol.shot.spinRpm, clubMph: pr.sol.clubMph } };
+  trainScore(s); // before it's added, so the game's run is worked out from the shots before it
   S.shots.push(s);
   persistShot(s).then(() => {
     if (!raws.length) return;
@@ -2151,6 +2236,7 @@ function arrived(shot) {
   const s = { ...shot, swing: swingOf(shot), excluded: !!shot.excluded }, i = S.shots.findIndex(x => x.id === s.id);
   cache.delete(s.id);
   if (i >= 0) { S.shots[i] = s; renderAll(); return; }
+  if (s.player === S.current && trainScore(s)) persistShot(s); // the NUC recorded it; this browser's game scores it
   S.shots.push(s);
   if (s.player !== S.current) { renderAll(); return; }
   selId = s.id;
@@ -2413,8 +2499,8 @@ function draw() {
     if (now >= pc.hang) { ctx.fillStyle = "#86efac"; ctx.strokeStyle = "#052e16"; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(X(pc.side), Y(pc.carry), 6, 0, Math.PI * 2); ctx.fill(); ctx.stroke(); label(`≈ ${f1(pc.carry)} carry`, X(pc.side) + 10, Y(pc.carry)); }
     if (last) { ctx.fillStyle = "#fff"; ctx.beginPath(); ctx.arc(last[0], last[1], 4, 0, Math.PI * 2); ctx.fill(); }
     if (now >= pc.duration) label(`≈ ${f1(pc.total)} total`, X(pc.sideTotal) + 10, Y(pc.total) - 2, "dim");
-    sideView(pc, now);
-  }
+    sideView(pc, now); sideView(pc, now, "sideMain");
+  } else { const el = $("sideMain"); if (el && el.offsetParent !== null) { const g = el.getContext("2d"); g.setTransform(1, 0, 0, 1, 0, 0); g.clearRect(0, 0, el.width, el.height); } }
   for (const [w, g] of groups) { // labelled after the flight so the line doesn't cover them
     const t = `${allSwings ? SWING_SHORT[w] + " · " : ""}2 in 3 land here: ${ydSize(2 * g.hy)} × ${ydSize(2 * g.hx)} yd`;
     ctx.font = "700 12px -apple-system, system-ui, sans-serif";
@@ -2432,13 +2518,13 @@ function label(t, x, y, kind) {
   ctx.fillStyle = kind === "tgt" ? "#bae6fd" : kind === "dim" ? "rgba(255,255,255,.85)" : "#bbf7d0"; ctx.fillText(t, x + 5, y);
 }
 function roundRect(x, y, w, h, rr) { ctx.beginPath(); ctx.moveTo(x + rr, y); ctx.arcTo(x + w, y, x + w, y + h, rr); ctx.arcTo(x + w, y + h, x, y + h, rr); ctx.arcTo(x, y + h, x, y, rr); ctx.arcTo(x, y, x + w, y, rr); ctx.closePath(); }
-function sideView(c, now) {
-  const el = $("side"); if (!el) return;
+function sideView(c, now, id = "side") {
+  const el = $(id); if (!el || el.offsetParent === null) return;
   const d = Math.min(2, window.devicePixelRatio || 1), w = el.clientWidth, h = el.clientHeight;
   if (!w || !h) return;
   if (el.width !== Math.round(w * d) || el.height !== Math.round(h * d)) { el.width = Math.round(w * d); el.height = Math.round(h * d); }
   const g = el.getContext("2d"); g.setTransform(d, 0, 0, d, 0, 0); g.clearRect(0, 0, w, h);
-  const maxD = Math.max(50, c.total * 1.04), maxH = Math.max(15, c.apex * 1.3), L = 10, R = 10, B = 20, T = 22;
+  const maxD = Math.max(10, c.total * 1.04), maxH = Math.max(3, c.apex * 1.3), L = 10, R = 10, B = 20, T = 22; // zooms in for short chips
   const gx = q => L + (q / maxD) * (w - L - R), gy = q => h - B - (q / maxH) * (h - B - T);
   g.strokeStyle = "rgba(255,255,255,.3)"; g.lineWidth = 1; g.beginPath(); g.moveTo(L, gy(0)); g.lineTo(w - R, gy(0)); g.stroke();
   g.strokeStyle = "rgba(255,255,255,.8)"; g.lineWidth = 2; g.lineJoin = "round"; g.setLineDash([6, 3]); g.beginPath();
@@ -2477,7 +2563,7 @@ async function reload() {
     await reload();
     store.prune && store.prune();
     $("loading").remove();
-    resize();
+    layout();
     if (moved) toast(`Moved ${moved} shot${moved === 1 ? "" : "s"} from the first Range Lab into the database`, 4000);
     if (storeInfo.kind !== "SQLite") toast(storeInfo.detail, 5000);
     if (servedByRelay) fetch("/status").then(r => r.json()).then(j => { if (j.omniRelay) connectRelay(selfRelay()); }).catch(() => {});
@@ -2486,7 +2572,272 @@ async function reload() {
 })();
 addEventListener("pagehide", () => { store && store.flush && store.flush(); });
 document.addEventListener("visibilitychange", () => { if (document.hidden && store && store.flush) store.flush(); });
-window.rangeLab = { S, get store() { return store; }, get info() { return storeInfo; }, record, calc, solve, BANDS, RawTap, live, distData, grouping, get browserCopy() { return browserCopy; } };
+window.rangeLab = { S, get store() { return store; }, get info() { return storeInfo; }, record, calc, solve, BANDS, RawTap, live, distData, grouping, get browserCopy() { return browserCopy; }, train: () => trainApi };
+
+// ------------------------------------------------------------------ Train: games for the measured numbers
+// One number at a time, then two together, in the order that builds a swing: ball speed, start line,
+// launch, then spin. Pick a target and hit it so many times in a row, within a tolerance.
+//
+// A game shot keeps its result in shot.target.drill. Both databases already store a shot's target as
+// JSON (target_json), so the NUC needed no change:
+//   { g: game, want: {metric: value}, tol: {metric: [kind, value]}, tier, goal, hit, streak, done,
+//     err: {metric: measured - wanted}, warm (a warm-up shot, not scored), test / testRun (typed in) }
+// Everything else (targets done, best runs, the run in progress, your own tolerance) is worked out
+// from those shots, so it survives a reload and shows the same on every device. Game shots don't
+// count towards the Distances tab: they're hit at a number, not at a distance.
+
+const range = (a, b, step) => Array.from({ length: Math.round((b - a) / step) + 1 }, (_, i) => +(a + i * step).toFixed(3));
+const lrInt = (v, u) => v == null || !isFinite(v) ? "–" : Math.round(v) === 0 ? `0${u}` : `${Math.abs(Math.round(v))}${u} ${v > 0 ? "R" : "L"}`;
+// kind "pct": the tolerance is a percentage of the target; "abs": in the metric's own units
+const METRICS = {
+  speed: { name: "Ball speed", unit: "mph", get: b => b.speedMph, kind: "pct", tiers: [10, 5, 2.5], ladder: range(10, 160, 5), def: 25, lo: 3, hi: 200,
+    val: v => `${f1(v)} mph`, chip: v => `${v}`, step: 0.1 },
+  dir: { name: "Direction", unit: "°", get: b => b.hla, kind: "abs", tiers: [4, 2, 1], ladder: [-10, -5, 0, 5, 10], def: 0, lo: -30, hi: 30, lrm: true,
+    val: v => lr(v, "°"), chip: v => v === 0 ? "Straight" : `${Math.abs(v)}° ${v > 0 ? "R" : "L"}`, step: 0.1 },
+  launch: { name: "Launch angle", unit: "°", get: b => b.vla, kind: "abs", tiers: [3, 1.5, 0.75], ladder: range(5, 50, 5), def: 15, lo: 0, hi: 70,
+    val: v => `${f1(v)}°`, chip: v => `${v}°`, step: 0.1 },
+  back: { name: "Back spin", unit: "rpm", get: b => backOf(b), kind: "pct", tiers: [20, 10, 5], ladder: range(1000, 10000, 1000), def: 4000, lo: 100, hi: 15000,
+    val: v => `${f0(v)} rpm`, chip: v => `${v / 1000}k`, step: 10 },
+  side: { name: "Side spin", unit: "rpm", get: b => sideOf(b), kind: "abs", tiers: [600, 300, 150], ladder: range(-1500, 1500, 500), def: 0, lo: -5000, hi: 5000, lrm: true,
+    val: v => lrInt(v, " rpm"), chip: v => v === 0 ? "None" : `${Math.abs(v)} ${v > 0 ? "R" : "L"}`, step: 10 },
+  spin: { name: "Spin rate", unit: "rpm", get: b => b.spinRpm, kind: "pct", tiers: [20, 10, 5], ladder: range(1000, 10000, 1000), def: 4000, lo: 100, hi: 15000,
+    val: v => `${f0(v)} rpm`, chip: v => `${v / 1000}k`, step: 10 },
+  axis: { name: "Spin axis", unit: "°", get: b => b.axisDeg, kind: "abs", tiers: [6, 3, 1.5], ladder: range(-15, 15, 5), def: 0, lo: -45, hi: 45, lrm: true,
+    val: v => lr(v, "°"), chip: v => v === 0 ? "0°" : `${Math.abs(v)}° ${v > 0 ? "R" : "L"}`, step: 0.1 },
+};
+const GAMES = [
+  { id: "speed", name: "Ball speed", main: "speed", note: "Hit the ball speed you pick, at any launch or direction. 15–25 mph is a short chip; go up 5 at a time." },
+  { id: "straight", name: "Straight", main: "dir", note: "Start the ball on the target line: direction 0°, at any speed. The other targets start it left or right on purpose." },
+  { id: "speed-straight", name: "Speed + straight", main: "speed", also: { dir: 0 }, note: "Both at once: the ball speed you pick, started straight." },
+  { id: "launch", name: "Launch angle", main: "launch", note: "Launch the ball at the angle you pick. Try several angles with the same club: ball position and shaft lean change it." },
+  { id: "launch-straight", name: "Launch + straight", main: "launch", also: { dir: 0 }, note: "The launch angle you pick, started straight." },
+  { id: "back", name: "Back spin", main: "back", note: "The back spin you pick. More speed and a steeper strike both add spin." },
+  { id: "side", name: "Side spin", main: "side", note: "Side spin curves the ball: R curves it right, L curves it left. None means it flies straight." },
+  { id: "back-side", name: "Back + side spin", main: "back", also: { side: 0 }, note: "The back spin you pick, with no side spin." },
+  { id: "spin", name: "Spin rate", main: "spin", note: "Total spin, whichever way it's tilted." },
+  { id: "axis", name: "Spin axis", main: "axis", note: "The tilt of the spin: 0° doesn't curve, R curves right, L curves left." },
+];
+const GAME = Object.fromEntries(GAMES.map(g => [g.id, g]));
+const TIERS = ["Easy", "Medium", "Hard", "Mine"], MINE = 3, WARMUPS = 5;
+const TIER_MARK = ["E", "M", "H", "★"];
+
+// ---- this browser's game settings, per player
+const tKey = pid => `omniRangeLab:train:${pid}`;
+function tState(pid = S.current) {
+  let st = null; try { st = JSON.parse(lsGet(tKey(pid)) || "null"); } catch {}
+  st = { game: "speed", targets: {}, tier: 1, goal: 5, on: false, warm: 0, sound: true, ...(st || {}) };
+  if (!GAME[st.game]) st.game = "speed";
+  return st;
+}
+const tSave = (st, pid = S.current) => lsSet(tKey(pid), JSON.stringify(st));
+const wantOf = (st, g = GAME[st.game]) => {
+  const m = METRICS[g.main], v = st.targets[g.id];
+  return { [g.main]: v != null && isFinite(v) ? +v : m.def, ...(g.also || {}) };
+};
+const sameWant = (a, b) => { const ka = Object.keys(a || {}), kb = Object.keys(b || {}); return ka.length === kb.length && ka.every(k => b[k] === a[k]); };
+
+// ---- game shots, worked out from the database
+const drillShots = (pid = S.current) => S.shots.filter(s => s.player === pid && s.target && s.target.drill).sort((a, b) => a.ts - b.ts);
+// your own tolerance for a metric: from your last few warm-up shots, about the size that you'd hit three in four of
+function mineTol(k, pid = S.current) {
+  const m = METRICS[k];
+  const errs = drillShots(pid).filter(s => s.target.drill.warm && s.target.drill.want && k in s.target.drill.want && s.target.drill.err && isFinite(s.target.drill.err[k])).slice(-WARMUPS)
+    .map(s => { const d = s.target.drill; return m.kind === "pct" ? d.err[k] / Math.abs(d.want[k]) * 100 : d.err[k]; });
+  if (errs.length < 3) return null;
+  const t = 1.15 * Math.sqrt(errs.reduce((a, e) => a + e * e, 0) / errs.length);
+  if (m.kind === "pct") return Math.max(1, Math.round(t * 2) / 2);
+  return m.unit === "rpm" ? Math.max(50, Math.round(t / 10) * 10) : Math.max(0.3, Math.round(t * 10) / 10);
+}
+function tolsFor(st, want) {
+  const out = {};
+  for (const k of Object.keys(want)) {
+    const m = METRICS[k], v = st.tier === MINE ? mineTol(k) : m.tiers[st.tier];
+    out[k] = v == null ? null : [m.kind, v];
+  }
+  return out;
+}
+const tolAbs = (k, tol, want) => tol[0] === "pct" ? Math.abs(want) * tol[1] / 100 : tol[1];
+function tolText(k, tol, want) {
+  if (!tol) return "your range: not measured yet";
+  const m = METRICS[k], a = tolAbs(k, tol, want), num = m.unit === "rpm" ? f0(a) : f1(a);
+  return tol[0] === "pct" ? `±${tol[1]}% (±${num} ${m.unit})` : `±${num}${m.unit === "°" ? "°" : " " + m.unit}`;
+}
+function diffText(k, d) {
+  const m = METRICS[k], dd = m.unit === "rpm" ? 0 : 1;
+  if (d == null || !isFinite(d)) return "–";
+  if (m.lrm) return Math.abs(d) < (dd ? 0.05 : 0.5) ? "on target" : `${Math.abs(d).toFixed(dd)}${m.unit === "°" ? "°" : " " + m.unit} too far ${d > 0 ? "R" : "L"}`;
+  return `${signed(d, dd)}${m.unit === "°" ? "°" : " " + m.unit}`;
+}
+// how a target has gone: shots, how many counted, best run, and the best tolerance it's been done at
+function levelInfo(gid, want, pid = S.current) {
+  const list = drillShots(pid).filter(s => s.target.drill.g === gid && !s.target.drill.warm && sameWant(s.target.drill.want, want));
+  const info = { n: list.length, hits: 0, best: 0, done: [], last: list[list.length - 1] || null };
+  let since = 0;
+  for (const s of list) {
+    const d = s.target.drill; since++;
+    if (d.hit) info.hits++;
+    info.best = Math.max(info.best, d.streak || 0);
+    if (d.done && !d.testRun) { info.done.push({ ts: s.ts, tier: d.tier, goal: d.goal, shots: since }); since = 0; }
+  }
+  info.doneTiers = new Set(info.done.map(x => x.tier));
+  return info;
+}
+function gameDone(gid, pid = S.current) { // targets done in this game, at any tolerance
+  const keys = new Set(drillShots(pid).filter(s => s.target.drill.g === gid && s.target.drill.done && !s.target.drill.testRun).map(s => JSON.stringify(s.target.drill.want)));
+  return keys.size;
+}
+
+// ---- scoring a new shot (called by app.js before the shot is added)
+function trainScore(s) {
+  const st = tState(s.player);
+  if (!st.on || (s.target && s.target.drill) || !s.ball) return false;
+  const g = GAME[st.game], want = wantOf(st, g), test = s.src === "manual";
+  const err = {};
+  for (const k of Object.keys(want)) { const v = METRICS[k].get(s.ball); err[k] = v != null && isFinite(v) ? Math.round((v - want[k]) * 100) / 100 : null; }
+  let drill;
+  if (st.warm > 0) {
+    drill = { g: g.id, want, warm: true, err, ...(test ? { test: true } : {}) };
+    st.warm--; tSave(st, s.player);
+  } else {
+    const tol = tolsFor(st, want);
+    if (Object.values(tol).some(t => !t)) { st.warm = WARMUPS - 1; tSave(st, s.player); s.target = { ...(s.target || {}), drill: { g: g.id, want, warm: true, err } }; return true; }
+    const hit = Object.keys(want).every(k => err[k] != null && Math.abs(err[k]) <= tolAbs(k, tol[k], want[k]) + 1e-9);
+    const prevShot = drillShots(s.player).filter(x => !x.target.drill.warm).pop(), prev = prevShot && prevShot.target.drill;
+    const cont = prev && prev.g === g.id && sameWant(prev.want, want) && prev.tier === st.tier && prev.goal === st.goal && prev.hit && !prev.done;
+    const streak = hit ? (cont ? prev.streak + 1 : 1) : 0, testRun = test || !!(cont && prev.testRun);
+    drill = { g: g.id, want, tol, tier: st.tier, goal: st.goal, hit, streak, err, ...(streak >= st.goal ? { done: true } : {}), ...(test ? { test: true } : {}), ...(testRun ? { testRun: true } : {}) };
+  }
+  s.target = { ...(s.target || {}), drill };
+  if (st.sound) beep(drill.warm ? "warm" : drill.done ? "done" : drill.hit ? "hit" : "miss");
+  return true;
+}
+// what the live bar asks for while a game is on
+function trainNeeds() {
+  const st = tState();
+  if (!st.on) return null;
+  const g = GAME[st.game], want = wantOf(st, g), tol = st.warm > 0 ? {} : tolsFor(st, want), m = {};
+  for (const k of Object.keys(want)) m[k] = { want: want[k], tol: tol[k] || null };
+  return { from: `Train: ${g.name}`, m, game: true };
+}
+
+// ---- a little sound: on by default, and only after you've pressed Start (browsers need a tap first)
+let audio = null;
+function beep(kind) {
+  try {
+    if (!audio) return;
+    const notes = { hit: [[880, 0.09]], miss: [[220, 0.16]], warm: [[600, 0.07]], done: [[660, 0.1], [880, 0.1], [1320, 0.22]] }[kind];
+    let t = audio.currentTime + 0.01;
+    for (const [f, d] of notes) {
+      const o = audio.createOscillator(), v = audio.createGain();
+      o.type = "sine"; o.frequency.value = f; v.gain.setValueAtTime(0.0001, t); v.gain.exponentialRampToValueAtTime(0.18, t + 0.015); v.gain.exponentialRampToValueAtTime(0.0001, t + d);
+      o.connect(v).connect(audio.destination); o.start(t); o.stop(t + d + 0.02); t += d * 0.9;
+    }
+  } catch {}
+}
+function wakeAudio() { try { audio = audio || new (window.AudioContext || window.webkitAudioContext)(); audio.resume && audio.resume(); } catch {} }
+
+// ---- the game card, under the live bar
+function renderGame() {
+  const el = $("game"); if (!el) return;
+  const st = tState();
+  if (!st.on || !S.players.length) { el.hidden = true; el.innerHTML = ""; return; }
+  el.hidden = false;
+  const g = GAME[st.game], want = wantOf(st, g), main = METRICS[g.main];
+  const lastShot = drillShots().filter(s => s.target.drill.g === g.id && sameWant(s.target.drill.want, want)).pop();
+  const d = lastShot && lastShot.target.drill;
+  const tol = tolsFor(st, want);
+  let h = "";
+  const wantText = Object.keys(want).map(k => `${k === g.main ? "" : `<span class="gm-tol">and </span>`}${METRICS[k].val(want[k])}`).join(" ");
+  if (st.warm > 0) {
+    const done = WARMUPS - st.warm;
+    h += `<div class="gm-top"><span class="gm-name">${esc(g.name)} · finding your range</span><span class="gm-want">${wantText}</span>
+      <span class="gm-tol">Hit ${WARMUPS} aiming for this; they set your own tolerance</span>
+      <span class="gm-dots">${Array.from({ length: WARMUPS }, (_, i) => `<i class="warm${i < done ? " on" : ""}"></i>`).join("")}</span></div>`;
+  } else {
+    const streak = d && !d.warm && d.tier === st.tier && d.goal === st.goal ? (d.done && !d.testRun ? d.goal : d.done ? 0 : d.streak) : 0;
+    h += `<div class="gm-top"><span class="gm-name">${esc(g.name)} · ${TIERS[st.tier]} · ${st.goal} in a row</span><span class="gm-want">${wantText}</span>
+      <span class="gm-tol">${Object.keys(want).map(k => tolText(k, tol[k], want[k])).join(" · ")}</span>
+      <span class="gm-dots" aria-label="${streak} of ${st.goal} in a row">${Array.from({ length: st.goal }, (_, i) => `<i class="${i < streak ? "on" : ""}"></i>`).join("")}</span></div>`;
+  }
+  const idx = main.ladder.indexOf(want[g.main]), next = idx >= 0 && idx < main.ladder.length - 1 ? main.ladder[idx + 1] : null;
+  if (d && d.done && !d.testRun && st.warm === 0) {
+    const info = levelInfo(g.id, want), took = info.done.length ? info.done[info.done.length - 1].shots : null;
+    el.classList.add("done");
+    h += `<div class="gm-last"><span class="gm-done">Done! ${d.goal} in a row${took ? ` in ${took} shot${took === 1 ? "" : "s"}` : ""}</span>
+      <span class="btns">${next != null ? `<button class="go" data-gm="next">Next: ${esc(main.chip(next))}${main.unit === "mph" ? " mph" : ""}</button>` : ""}${st.tier < 2 ? `<button data-gm="harder">Harder: ${TIERS[st.tier + 1]}</button>` : ""}<button data-gm="stop">Stop</button></span></div>`;
+  } else {
+    el.classList.remove("done");
+    let last = `<span class="muted">${st.warm > 0 ? "Warm-up shots don't score." : "Hit when you're ready. Each shot in tolerance fills a dot; a miss starts again."}</span>`;
+    if (d) {
+      const v = Object.keys(want).map(k => `<span class="v">${METRICS[k].val(METRICS[k].get(lastShot.ball))}</span> <span class="gm-tol">${diffText(k, d.err[k])}</span>`).join(" ");
+      last = `${v} ${d.warm ? `<span class="gm-tol">warm-up</span>` : d.hit ? `<span class="hit">✓ in</span>` : `<span class="miss">✗ out</span>`}${d.test ? ` <span class="gm-tol">(test shot: doesn't count)</span>` : ""}`;
+    }
+    h += `<div class="gm-last">${last}<span class="btns"><button data-gm="stop">Stop</button></span></div>`;
+  }
+  el.innerHTML = h;
+  el.onclick = e => {
+    const b = e.target.closest("[data-gm]"); if (!b) return;
+    const s2 = tState();
+    if (b.dataset.gm === "stop") s2.on = false;
+    if (b.dataset.gm === "next" && next != null) s2.targets[g.id] = next;
+    if (b.dataset.gm === "harder") s2.tier = Math.min(2, s2.tier + 1);
+    tSave(s2); renderLive(); renderGame(); if (tab === "train") renderTrain(); resize();
+  };
+}
+
+// ---- the Train tab
+function renderTrain() {
+  const el = $("pTrain"), st = tState(), p = me(), g = GAME[st.game], want = wantOf(st, g), main = METRICS[g.main];
+  const tol = tolsFor(st, want), info = levelInfo(g.id, want);
+  let h = `<div class="head"><b>${esc(p.name)}</b> · ${esc(clubLong(curClub()))}</div>
+    <div class="note" style="margin-top:2px">Learn the numbers one at a time. Pick a game and a target, then hit it ${st.goal} times in a row within the tolerance. Game shots are saved but don't count towards your Distances.</div>`;
+  h += `<h3>Games</h3><div class="games">${GAMES.map((x, i) => { const n = gameDone(x.id); return `<button data-g="${x.id}" class="${x.id === g.id ? "sel" : ""}"><span class="no">${i + 1}</span>${esc(x.name)}<span class="st">${n ? `${n} target${n === 1 ? "" : "s"} done` : "not done yet"}</span></button>`; }).join("")}</div>`;
+  h += `<h3>${esc(g.name)}</h3><div class="note" style="margin-top:0">${esc(g.note)}</div>`;
+  h += `<h3>Target</h3><div class="tladder">${main.ladder.map(v => {
+    const li = levelInfo(g.id, { [g.main]: v, ...(g.also || {}) }), marks = [0, 1, 2, MINE].filter(t => li.doneTiers.has(t)).map(t => TIER_MARK[t]).join("");
+    return `<button data-t="${v}" class="${v === want[g.main] ? "sel" : ""}" title="${esc(main.val(v))}${marks ? " · done at " + [0, 1, 2, MINE].filter(t => li.doneTiers.has(t)).map(t => TIERS[t]).join(", ") : ""}">${esc(main.chip(v))}<span class="md">${marks}</span></button>`;
+  }).join("")}</div>
+    <div class="row"><label class="muted" for="tOther">Other</label><input type="number" id="tOther" inputmode="decimal" step="${main.step}" value="${main.ladder.includes(want[g.main]) ? "" : want[g.main]}" placeholder="${main.unit}" style="width:90px"></div>`;
+  if (g.also) h += `<div class="note">And at the same time: ${Object.keys(g.also).map(k => `${METRICS[k].name.toLowerCase()} ${METRICS[k].val(g.also[k])}`).join(", ")}.</div>`;
+  h += `<h3>Tolerance</h3><div class="tolrow">${TIERS.map((t, i) => {
+    const vals = Object.keys(want).map(k => { const v = i === MINE ? mineTol(k) : METRICS[k].tiers[i]; return v == null ? null : (METRICS[k].kind === "pct" ? `±${v}%` : `±${v}${METRICS[k].unit === "°" ? "°" : ""}`); });
+    return `<button data-tier="${i}" class="${i === st.tier ? "sel" : ""}">${t} <span class="muted">${vals.every(v => v) ? vals.join(" ") : "not measured"}</span></button>`;
+  }).join("")}</div>
+    <div class="note">${Object.keys(want).map(k => `${METRICS[k].name}: ${tol[k] ? `${tolText(k, tol[k], want[k])}, so ${rangeText(k, tol[k], want[k])} counts` : "hit the warm-up shots first"}`).join(". ")}.</div>`;
+  h += `<h3>In a row</h3><div class="tolrow">${[3, 4, 5].map(n => `<button data-goal="${n}" class="${n === st.goal ? "sel" : ""}">${n}</button>`).join("")}
+    <label class="muted" style="margin-left:auto"><input type="checkbox" id="tSound" ${st.sound ? "checked" : ""}> Sound</label></div>`;
+  h += `<div class="row" style="margin-top:10px">${st.on ? `<button class="danger" id="tStop">Stop game</button>` : `<button class="go" id="tStart">Start game</button>`}
+    <button id="tWarm" title="Your next ${WARMUPS} shots aren't scored: they measure how close you get, and set the Mine tolerance">${st.on && st.warm > 0 ? `Warm-up: ${WARMUPS - st.warm} of ${WARMUPS}` : `Find my range (${WARMUPS} shots)`}</button></div>`;
+  h += `<h3>This target</h3>`;
+  if (info.n) {
+    h += `<div class="grid">${tile("plain", "Shots", f0(info.n), "")}${tile("plain", "In tolerance", f0(info.hits / info.n * 100), "%")}${tile("plain", "Best run", f0(info.best), "in a row")}</div>`;
+    if (info.done.length) h += `<div class="note">Done ${info.done.length} time${info.done.length === 1 ? "" : "s"}: ${info.done.slice(-4).map(x => `${TIERS[x.tier]}, ${x.goal} in a row in ${x.shots} shot${x.shots === 1 ? "" : "s"} (${new Date(x.ts).toLocaleDateString("en-GB", { day: "numeric", month: "short" })})`).join("; ")}.</div>`;
+  } else h += `<div class="muted">No shots at this target yet.</div>`;
+  const recent = drillShots().filter(s => s.target.drill.g === g.id).slice(-12).reverse();
+  if (recent.length) {
+    h += `<h3>Recent ${esc(g.name.toLowerCase())} shots</h3><table class="cmp trainlog"><thead><tr><th>Time</th><th>Target</th><th>Hit</th><th>Off by</th><th></th></tr></thead><tbody>${recent.map(s => {
+      const d = s.target.drill, k = g.main;
+      return `<tr><td>${time(s.ts)}</td><td>${esc(METRICS[k].val(d.want[k]))}</td><td>${esc(METRICS[k].val(METRICS[k].get(s.ball)))}</td><td>${esc(diffText(k, d.err[k]))}</td><td class="${d.warm ? "warm" : d.hit ? "hit" : "miss"}">${d.warm ? "warm-up" : d.hit ? `✓ ${d.streak}${d.done ? " done" : ""}` : "✗"}${d.test ? " · test" : ""}</td></tr>`;
+    }).join("")}</tbody></table>`;
+  }
+  el.innerHTML = h;
+  const upd = f => { const s2 = tState(); f(s2); tSave(s2); renderTrain(); renderLive(); renderGame(); resize(); };
+  el.querySelectorAll("[data-g]").forEach(b => (b.onclick = () => upd(s2 => { s2.game = b.dataset.g; })));
+  el.querySelectorAll("[data-t]").forEach(b => (b.onclick = () => upd(s2 => { s2.targets[g.id] = +b.dataset.t; })));
+  el.querySelectorAll("[data-tier]").forEach(b => (b.onclick = () => upd(s2 => { s2.tier = +b.dataset.tier; if (s2.tier === MINE && Object.keys(want).some(k => mineTol(k) == null)) { s2.warm = WARMUPS; if (s2.on) wakeAudio(); } })));
+  el.querySelectorAll("[data-goal]").forEach(b => (b.onclick = () => upd(s2 => { s2.goal = +b.dataset.goal; })));
+  $("tOther").onchange = e => { const v = parseFloat(e.target.value); if (isFinite(v) && v >= main.lo && v <= main.hi && !(main.kind === "pct" && v <= 0)) upd(s2 => { s2.targets[g.id] = Math.round(v / main.step) * main.step; }); else if (e.target.value !== "") toast(`Pick a target between ${main.lo} and ${main.hi} ${main.unit}`); };
+  $("tSound").onchange = e => upd(s2 => { s2.sound = e.target.checked; });
+  if ($("tStart")) $("tStart").onclick = () => { wakeAudio(); upd(s2 => { s2.on = true; if (s2.tier === MINE && Object.keys(want).some(k => mineTol(k) == null)) s2.warm = WARMUPS; }); };
+  if ($("tStop")) $("tStop").onclick = () => upd(s2 => { s2.on = false; s2.warm = 0; });
+  $("tWarm").onclick = () => { wakeAudio(); upd(s2 => { s2.on = true; s2.warm = WARMUPS; s2.tier = MINE; }); };
+}
+function rangeText(k, tol, want) {
+  const m = METRICS[k], a = tolAbs(k, tol, want), lo = want - a, hi = want + a;
+  if (m.lrm) return `${m.val(lo)} to ${m.val(hi)}`;
+  return m.unit === "rpm" ? `${f0(lo)}–${f0(hi)} rpm` : `${f1(lo)}–${f1(hi)}${m.unit === "°" ? "°" : " " + m.unit}`;
+}
+const trainApi = { METRICS, GAMES, state: tState, save: tSave, levelInfo, mineTol, drillShots };
 
 </script>
 </body>
