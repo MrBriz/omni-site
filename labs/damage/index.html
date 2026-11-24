@@ -72,6 +72,143 @@
   <h3>The play</h3>
   Groups of four tee off every ten minutes. Each player's skill sets their drive and scatter, and their divot habits match the Divot Lab presets. Their tidiness is the chance they mend their own marks, and tidy players also fix someone else's. Wet ground means bigger, muddier divots and deeper pitch marks. The greenkeeper's morning round rakes the bunkers, fills half the open divots and repairs some pitch marks.
 </div></div>
+<!-- omni-shared: built in from shared/ by shared/embed.py; edit shared/, not this copy -->
+<script data-omni-shared="remote">
+// The Omni remote: lets the Omni connector (Claude, on a voice call) see and work any Omni page.
+//
+// Opened from the NUC, a page says what it is on the NUC's live feed, and is listed as open for as long
+// as the feed is; it carries out the commands the connector sends on the feed, and answers with what
+// happened. Opened anywhere else (a claude.ai artifact, GitHub Pages) it does nothing.
+//
+// Every page gets the same controls for free: the connector can list the buttons, sliders, boxes and
+// lists it can see, each by its label, press or set any of them, and read the page's text. An app can
+// add its own named actions and state on top:
+//
+//   OmniRemote.start("Range Lab", { nuc })                 once the page is ready; nuc: whether it was opened
+//                                                          from the NUC, if the app knows (otherwise it asks)
+//   OmniRemote.action("show_tab", "Open a tab", ({ tab }) => ..., { tab: "shot, shots, dist, ..." })
+//   OmniRemote.state(() => ({ ... }))                      what the connector gets as the app's state
+const OmniRemote = (() => {
+  const id = Math.random().toString(36).slice(2, 10);
+  let app = null, on = false, sock = null;
+  const actions = {}, states = [];
+  const clean = s => String(s || "").replace(/\s+/g, " ").trim();
+  const shown = el => !!(el && el.getClientRects().length && getComputedStyle(el).visibility !== "hidden");
+
+  // ---- the page's controls, each with the label a person would call it by
+  function labelOf(el) {
+    const aria = el.getAttribute("aria-label") || el.getAttribute("title");
+    if (aria) return clean(aria);
+    if (el.tagName === "BUTTON" || (el.tagName === "INPUT" && /^(button|submit)$/.test(el.type))) return clean(el.textContent || el.value);
+    if (el.id) { const l = document.querySelector(`label[for="${CSS.escape(el.id)}"]`); if (l) return clean(l.textContent); }
+    const wrap = el.closest("label");
+    if (wrap) { const t = clean([...wrap.childNodes].filter(n => n !== el && !(n.contains && n.contains(el)) && !(n.matches && n.matches("select,input,button"))).map(n => n.textContent).join(" ")); if (t) return t; }
+    // the text just before it in its row: "<span>Wind</span><input>", or the row's own label
+    for (let n = el.previousElementSibling; n; n = n.previousElementSibling) { const t = clean(n.textContent); if (t && !n.matches("select,input,button")) return t; }
+    const row = el.parentElement; if (row) { const lab = row.querySelector(".l, .lk, .lbl, .label, b, strong, span"); if (lab && lab !== el && !lab.contains(el)) { const t = clean(lab.textContent); if (t) return t; } }
+    return clean(el.placeholder || el.name || el.id || el.type || el.tagName.toLowerCase());
+  }
+  function controls() {
+    const out = [], seen = {};
+    for (const el of document.querySelectorAll("button, input, select, textarea, [role=button], [role=tab]")) {
+      if (!shown(el) || el.disabled || el.type === "hidden" || el.type === "file" || el.closest("[data-omni-skip]")) continue;
+      let label = labelOf(el).slice(0, 80); if (!label) continue;
+      seen[label] = (seen[label] || 0) + 1; if (seen[label] > 1) label = `${label} (${seen[label]})`;
+      const c = { label, kind: el.tagName === "SELECT" ? "list" : el.tagName === "INPUT" ? (el.type === "checkbox" || el.type === "radio" ? "tick" : el.type === "range" ? "slider" : el.type === "button" || el.type === "submit" ? "button" : "box") : el.tagName === "TEXTAREA" ? "box" : "button" };
+      if (c.kind === "list") { c.value = el.selectedOptions[0] ? clean(el.selectedOptions[0].textContent) : el.value; c.options = [...el.options].map(o => clean(o.textContent)).slice(0, 40); }
+      else if (c.kind === "tick") c.value = el.checked;
+      else if (c.kind === "slider") Object.assign(c, { value: +el.value, min: +el.min, max: +el.max, step: el.step === "any" ? null : +(el.step || 1) });
+      else if (c.kind === "box") { c.value = el.value; if (el.type === "number") Object.assign(c, { min: el.min === "" ? null : +el.min, max: el.max === "" ? null : +el.max }); }
+      else if (el.classList.contains("sel") || el.getAttribute("aria-pressed") === "true" || el.getAttribute("aria-selected") === "true") c.selected = true;
+      c.el = el; out.push(c);
+    }
+    return out;
+  }
+  const word = s => clean(s).toLowerCase();
+  function find(label, kinds) {
+    const all = controls().filter(c => !kinds || kinds.includes(c.kind)), want = word(label);
+    return all.find(c => word(c.label) === want) || all.find(c => word(c.label).startsWith(want)) || all.find(c => word(c.label).includes(want))
+      || all.find(c => c.options && c.options.some(o => word(o) === want)) || null;
+  }
+  const fire = (el, ...types) => { for (const t of types) el.dispatchEvent(new Event(t, { bubbles: true })); };
+  function setControl(c, value) {
+    const el = c.el;
+    if (c.kind === "list") {
+      const v = word(value), o = [...el.options].find(o => word(o.textContent) === v || word(o.value) === v) || [...el.options].find(o => word(o.textContent).includes(v));
+      if (!o) throw new Error(`"${c.label}" has no option "${value}". Options: ${c.options.join(", ")}`);
+      el.value = o.value; fire(el, "input", "change");
+    } else if (c.kind === "tick") {
+      const v = value === true || /^(true|on|yes|1|tick|ticked|checked)$/i.test(String(value));
+      if (el.checked !== v) el.click();
+    } else if (c.kind === "button") { el.click(); }
+    else {
+      if (c.kind === "slider" || el.type === "number") { const n = parseFloat(value); if (!isFinite(n)) throw new Error(`"${c.label}" needs a number`); el.value = String(n); }
+      else el.value = String(value);
+      fire(el, "input", "change");
+    }
+  }
+  const strip = c => { const { el, ...rest } = c; return rest; };
+  function text(max = 6000) {
+    const t = clean(document.body.innerText || "");
+    return t.length > max ? t.slice(0, max) + " …" : t;
+  }
+  function appState() { const s = {}; for (const f of states) { try { Object.assign(s, f() || {}); } catch (e) { s.error = String(e); } } return s; }
+  function describe() {
+    return { page: id, app, title: document.title, path: location.pathname, actions: Object.fromEntries(Object.entries(actions).map(([k, a]) => [k, { description: a.description, params: a.params }])),
+      controls: controls().map(strip), state: appState() };
+  }
+
+  // ---- commands from the connector
+  async function run(cmd) {
+    const a = cmd.args || {};
+    const after = () => new Promise(r => setTimeout(r, 250)); // let the page redraw before reporting back
+    switch (cmd.action) {
+      case "describe": return describe();
+      case "read": return { state: appState(), text: text(a.max || 6000) };
+      case "press": case "click": { const c = find(a.control, ["button", "tick"]) || find(a.control); if (!c) throw new Error(`No control called "${a.control}" here`); c.kind === "button" ? c.el.click() : setControl(c, !c.el.checked); await after(); return { pressed: c.label, state: appState() }; }
+      case "set": { const c = find(a.control, ["slider", "box", "list", "tick"]); if (!c) throw new Error(`No setting called "${a.control}" here`); setControl(c, a.value); await after(); const now = find(c.label); return { set: c.label, value: now ? strip(now).value : a.value, state: appState() }; }
+      default: {
+        const act = actions[cmd.action];
+        if (!act) throw new Error(`This page has no action "${cmd.action}"`);
+        const result = await act.fn(a); await after();
+        return { result: result === undefined ? "done" : result, state: appState() };
+      }
+    }
+  }
+  async function post(path, body) {
+    try { await fetch(path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body), keepalive: true }); } catch {}
+  }
+  const send = m => { if (sock && sock.readyState === 1) { sock.send(JSON.stringify(m)); return true; } return false; };
+  function announce() { if (on) send({ type: "page", page: id, app, title: document.title, path: location.pathname, actions: Object.keys(actions), visible: !document.hidden }); }
+  const answer = m => send({ type: "reply", ...m }) || post("/api/pages/reply", m);
+
+  async function start(name, { nuc } = {}) {
+    if (on) return;
+    app = name || document.title;
+    if (nuc === false || !/^https?:$/.test(location.protocol)) return;
+    if (nuc !== true) { try { const r = await fetch("/api/info", { cache: "no-store" }); const j = await r.json(); if (!j || !j.omniHub) return; } catch { return; } }
+    on = true;
+    const connect = () => {
+      const ws = sock = new WebSocket(`${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/ws`);
+      ws.onmessage = async m => {
+        let ev; try { ev = JSON.parse(m.data); } catch { return; }
+        if (ev.type !== "command" || !(ev.to === id || ev.to === "*")) return;
+        try { answer({ id: ev.id, page: id, ok: true, result: await run(ev) }); }
+        catch (e) { answer({ id: ev.id, page: id, ok: false, error: String(e && e.message || e) }); }
+      };
+      ws.onopen = announce;
+      ws.onclose = () => setTimeout(connect, 3000);
+    };
+    connect();
+    document.addEventListener("visibilitychange", announce);
+  }
+  return { start, action: (name, description, fn, params = {}) => { actions[name] = { description, fn, params }; }, state: f => states.push(f), describe, run, get page() { return id; } };
+})();
+</script>
+<script data-omni-app="start">
+OmniRemote.start("Damage Lab");
+</script>
+<!-- /omni-shared -->
 <script>(()=>{var p={FOOTPRINT:1,SPLASH:2,PITCH:3,DIVOT:4,PLUG:5};var q=Date.UTC(2025,0,1)/1e3,U=24;function oe(n){let e=new ArrayBuffer(n.length*U),a=new DataView(e);return n.forEach((t,i)=>{let o=i*U,r=Math.max(0,Math.min(7,Math.round(((t.width||.056)*1e3-40)/8)));a.setUint8(o,t.type),a.setUint8(o+1,(t.repaired?1:0)|(t.replaced?2:0)|(t.sanded?4:0)|(t.kind&3)<<3|r<<5),a.setUint16(o+2,t.seed&65535,!0),a.setFloat32(o+4,t.x,!0),a.setFloat32(o+8,t.z,!0),a.setUint16(o+12,Math.round((t.heading%360+360)%360*100),!0),a.setUint8(o+14,Math.min(255,Math.round(t.size*100))),a.setUint8(o+15,Math.min(255,Math.round(t.depth*1e3))),a.setUint16(o+16,t.player||0,!0),a.setUint32(o+18,Math.max(0,Math.round((t.time??q)-q)),!0),a.setUint16(o+22,t.repairedBy||0,!0)}),new Uint8Array(e)}function ae(n){let e=new DataView(n.buffer,n.byteOffset,n.byteLength),a=[];for(let t=0;t+U<=n.byteLength;t+=U){let i=e.getUint8(t+1);a.push({type:e.getUint8(t),repaired:!!(i&1),replaced:!!(i&2),sanded:!!(i&4),kind:i>>3&3,width:(40+8*(i>>5))/1e3,seed:e.getUint16(t+2,!0),x:e.getFloat32(t+4,!0),z:e.getFloat32(t+8,!0),heading:e.getUint16(t+12,!0)/100,size:e.getUint8(t+14)/100,depth:e.getUint8(t+15)/1e3,player:e.getUint16(t+16,!0),time:e.getUint32(t+18,!0)+q,repairedBy:e.getUint16(t+22,!0)})}return a}var F=16,be={DIVOT:p.DIVOT,PITCH:p.PITCH,FOOT:p.FOOTPRINT,SPLASH:p.SPLASH},C={pitchRepaired:4,pitchOpen:15,divotReplaced:12,divotSanded:28,divotOpen:60},A=86400,J=n=>10.5-6.5*Math.cos(2*Math.PI*(n-20)/365),X=n=>Math.exp(-.5*((n-20)/5.5)**2),pe=n=>Math.floor((n-Date.UTC(new Date(n*1e3).getUTCFullYear(),0,1)/1e3)/A);function _(n,e){let a=0;for(let t=n;t<e;t+=A)a+=X(J(pe(t)))*Math.min(1,(e-t)/A);return a}var L=n=>`${n.type===F?Math.round(n.size*100):n.type}:${n.player}:${n.time}:${n.seed}`,re=n=>n.type===F?`R${L(n)}:${n.repairedBy}:${Math.round(n.depth*1e3)}:${Math.round(n.heading*100)}`:L(n),v=class n{constructor(){this.events=[],this.keys=new Set}add(e){let a=re(e);return this.keys.has(a)?!1:(this.keys.add(a),this.events.push(e),!0)}repair(e,a,t,i){return this.add({type:F,size:e.type/100,player:e.player,time:e.time,seed:e.seed,x:e.x,z:e.z,repairedBy:a,...(()=>{let o=Math.round(Math.max(0,(i-e.time)/36))/100,r=Math.min(255,Math.floor(o/168));return{heading:Math.min(167.99,Math.round((o-r*168)*100)/100),depth:r/1e3}})(),repaired:!0,replaced:t==="replace",sanded:t==="sand",kind:0,width:.056})}merge(e){let a=0;for(let t of e.events)this.add({...t})&&a++;return a}bytes(){return oe(this.events.map(e=>({...e,heading:(e.type===F,e.heading)})))}static fromBytes(e){let a=new n;for(let t of ae(e))a.add(t);return a}state(e,a=()=>0){let t=new Map,i=[];for(let o of this.events)o.type!==F&&o.time<=e&&t.set(L(o),{...o,by:o.repaired?o.player:0,how:o.repaired?o.replaced?"replace":o.sanded?"sand":o.type===p.FOOTPRINT||o.type===p.SPLASH?"rake":"repair":null,mendedAt:o.repaired?o.time:null});for(let o of this.events)if(o.type===F){let r=t.get(L(o)),l=o.time+(Math.round(o.depth*1e3)*168+o.heading)*3600;r&&l<=e&&(r.mendedAt===null||l<r.mendedAt||l===r.mendedAt&&o.repairedBy<r.by)&&(r.by=o.repairedBy,r.mendedAt=l,r.how=o.replaced?"replace":o.sanded?"sand":r.type===p.FOOTPRINT||r.type===p.SPLASH?"rake":"repair")}for(let o of t.values()){let r=0;if(o.type===p.FOOTPRINT||o.type===p.SPLASH)r=o.mendedAt!==null?1:1-Math.exp(-a(o.time,e)/40);else{let l=o.type===p.PITCH,h=l?C.pitchOpen:C.divotOpen;if(o.mendedAt===null)r=_(o.time,e)/h;else{let M=l?C.pitchRepaired:o.how==="replace"?C.divotReplaced:C.divotSanded;r=_(o.time,o.mendedAt)/h+_(o.mendedAt,e)/M}}o.heal=Math.min(1,r),i.push(o)}return i}prune(e,a){let t=new Set(this.state(e,a).filter(o=>o.heal>=1).map(L)),i=this.events.length;return this.events=this.events.filter(o=>!t.has(L(o))),this.keys=new Set(this.events.map(re)),i-this.events.length}blame(e,a){let t=this.state(e,a),i={},o=r=>i[r]||={made:0,open:0,ownFixed:0,othersFixed:0,damage:0};for(let r of t){let l=o(r.player);l.made++,r.mendedAt===null&&r.heal<1&&(l.open++,l.damage+=(r.type===p.DIVOT?r.size*(r.width||.05):r.type===p.PITCH?5e-4:3e-4)*(1-r.heal)),r.mendedAt!==null&&(r.by===r.player?l.ownFixed++:o(r.by).othersFixed++)}return i}};var T={tee:[0,0],green:{x:392,z:0,r:16},fairway:{x0:140,x1:375,half:16},bunkers:[{x:372,z:-24,rx:9,rz:6},{x:405,z:22,rx:7,rz:6},{x:255,z:22,rx:11,rz:6}]},Z=[{id:1,name:"You",skill:"mid",tidy:.9,col:"#facc15"},{id:2,name:"Alex",skill:"low",tidy:.95,col:"#38bdf8"},{id:3,name:"Sam",skill:"high",tidy:.35,col:"#f87171"},{id:4,name:"Priya",skill:"low",tidy:.8,col:"#a78bfa"},{id:5,name:"Tom",skill:"mid",tidy:.55,col:"#fb923c"},{id:6,name:"Jo",skill:"high",tidy:.7,col:"#34d399"},{id:7,name:"Raj",skill:"mid",tidy:.2,col:"#f472b6"},{id:8,name:"Mia",skill:"tour",tidy:1,col:"#e5e7eb"}],H={id:999,name:"Greenkeeper",col:"#86efac"},fe={tour:{drive:265,sd:11,appSd:.05,divot:.95,depth:4,low:11},low:{drive:235,sd:15,appSd:.07,divot:.8,depth:3.5,low:8},mid:{drive:210,sd:20,appSd:.1,divot:.6,depth:3,low:6},high:{drive:180,sd:26,appSd:.14,divot:.45,depth:2.5,low:4}},ie=(n,e)=>T.bunkers.find(a=>((n-a.x)/a.rx)**2+((e-a.z)/a.rz)**2<1),ue=(n,e)=>Math.hypot(n-T.green.x,e-T.green.z)<T.green.r;function ye(n){let e=n>>>0||1,a=()=>((e=Math.imul(e^e>>>15,2246822507)+1831565813)>>>0)/4294967296;return{u:a,n:()=>Math.sqrt(-2*Math.log(a()+1e-12))*Math.cos(6.283*a())}}function me(n,e,a,t,i=.3){let o=fe[e.skill],r=()=>t.u()*65535|0,l=o.drive*(1+.06*t.n()),h=o.sd*t.n(),M=ie(l,h),f={x:T.green.x+4*t.n(),z:T.green.z+4*t.n()},g=Math.hypot(f.x-l,f.z-h),x=Math.atan2(f.z-h,f.x-l)*180/Math.PI,y=S=>a+S*120;if(M)se(n,e,M,l,h,y(1),t,r);else if(t.u()<o.divot){let S=Math.max(2.6,o.depth*(1+.5*i)+1.2*Math.abs(t.n()))/1e3,$=Math.min(.32,2*Math.sqrt(2*1.45*S)*(.75+.15*t.u())),d=i>.85?3:i<.12?2:t.u()<.7?0:1,I=x*Math.PI/180,Y=$*.5+.02,R={type:p.DIVOT,x:l+Math.cos(I)*Y,z:h+Math.sin(I)*Y,heading:x,size:$,depth:S,width:.05+.01*t.u(),kind:d,seed:r(),player:e.id,time:y(1),repairedBy:0};t.u()<e.tidy&&(d<=1&&t.u()<.6?R.repaired=R.replaced=!0:R.repaired=R.sanded=!0,R.repairedBy=e.id),n.add(R)}let m=f.x+g*o.appSd*t.n()-g*.02,w=f.z+g*o.appSd*.8*t.n(),k=ie(m,w);if(k&&(se(n,e,k,m,w,y(3),t,r),m=f.x+3*t.n(),w=f.z+3*t.n()),ue(m,w)){let S={type:p.PITCH,x:m,z:w,heading:x,size:.025+.01*t.u(),depth:(3+5*i+1.5*t.u())/1e3,seed:r(),player:e.id,time:y(4),repairedBy:0,kind:0};if(t.u()<e.tidy&&(S.repaired=!0,S.repairedBy=e.id),n.add(S),e.tidy>.75&&t.u()<e.tidy-.3){let $=n.events.filter(I=>I.type===p.PITCH&&!I.repaired&&I.player!==e.id&&I.time<a),d=$[Math.floor(t.u()*$.length)];d&&n.repair(d,e.id,"repair",y(5))}}}function se(n,e,a,t,i,o,r,l){let h=Math.atan2(i-a.z,t-a.x),M=a.x+Math.cos(h)*a.rx,f=a.z+Math.sin(h)*a.rz,g=4+Math.floor(r.u()*4),x=[];for(let m=0;m<g;m++){let w=(m+.5)/g,k=m%2?.12:-.12;x.push({type:p.FOOTPRINT,x:M+(t-M)*w-Math.sin(h)*k,z:f+(i-f)*w+Math.cos(h)*k,heading:h*180/Math.PI+180,size:.29,depth:.025,seed:l(),player:e.id,time:o,repairedBy:0,kind:0})}x.push({type:p.SPLASH,x:t,z:i,heading:0,size:.35,depth:.04,seed:l(),player:e.id,time:o+30,repairedBy:0,kind:0});let y=r.u()<e.tidy;for(let m of x)y&&(m.repaired=!0,m.repairedBy=e.id),n.add(m)}function Me(n,e,{rake:a=!0,divots:t=.5,pitch:i=.2}={},o){let r=n.state(e),l=0;for(let h of r)h.mendedAt!==null||h.heal>=1||((h.type===p.FOOTPRINT||h.type===p.SPLASH)&&a?(n.repair(h,H.id,"rake",e),l++):h.type===p.DIVOT&&o.u()<t?(n.repair(h,H.id,"sand",e),l++):h.type===p.PITCH&&o.u()<i&&(n.repair(h,H.id,"repair",e),l++));return l}function Q(n,e,{groups:a=10,wet:t=.3,keeper:i=!0,seed:o=1,players:r=Z}={}){let l=ye(o+Math.floor(e/A));i&&Me(n,e+6*3600,{rake:!0,divots:.5,pitch:.2},l);for(let h=0;h<a;h++){let M=e+27e3+h*600+7200;[...r].sort(()=>l.u()-.5).slice(0,4).forEach((g,x)=>me(n,g,M+x*40,l,t))}}var u=n=>document.getElementById(n),c={season:"summer",groups:12,wet:.3,keeper:!0,colour:"state",view:"hole",who:0,now:0},E={summer:Date.UTC(2026,5,29)/1e3,winter:Date.UTC(2026,11,28)/1e3},b=new v,P=0,ne=0,D="",K=()=>E[c.season]+c.now*A+18*3600,G=n=>n===H.id?H:Z.find(e=>e.id===n)||{name:`#${n}`,col:"#999"};function de(){b=new v,P=0,c.now=0,D=""}function V(n){for(let e=0;e<n;e++)Q(b,E[c.season]+P*A,{groups:c.groups,wet:c.wet,keeper:c.keeper,seed:11}),P++;c.now=P-1,ne++,z()}function N(n){let e=K(),a=b.state(e),t=0;for(let i of a)i.mendedAt!==null||i.heal>=1||(n==="rake"&&(i.type===p.FOOTPRINT||i.type===p.SPLASH)&&(t+=b.repair(i,1,"rake",e)?1:0),n==="pitch"&&i.type===p.PITCH&&(t+=b.repair(i,1,"repair",e)?1:0),n==="divots"&&i.type===p.DIVOT&&(t+=b.repair(i,1,i.kind<=1?"replace":"sand",e)?1:0),n==="theirs"&&i.player===c.who&&c.who&&(t+=b.repair(i,c.who,i.type===p.DIVOT?"sand":i.type===p.PITCH?"repair":"rake",e)?1:0));D=`${t} mended just now${n==="theirs"?` by ${G(c.who).name}`:" by you"} (each one a 24-byte repair record).`,z()}function le(){let n=new v,e=new v;n.merge(b),e.merge(b);let a=b.events.length;for(let h=0;h<2;h++)Q(h%2?e:n,E[c.season]+(P+h)*A,{groups:c.groups,wet:c.wet,keeper:c.keeper,seed:11});let t=n.events.length-a,i=e.events.length-a,o=new v;o.merge(n),o.merge(e);let r=new v;r.merge(e),r.merge(n);let l=h=>h.state(E[c.season]+(P+2)*A).map(M=>L(M)+M.by+M.heal.toFixed(3)).sort().join();b=o,P+=2,c.now=P-1,D=`Two phones: A logged ${t} new records (${t*24} bytes), B ${i} (${i*24} bytes). After swapping, both hold the same ${o.events.length} records and see ${l(o)===l(r)?"exactly the same course":"DIFFERENT courses (bug)"}.`,ne++,z()}var te=u("c"),s=te.getContext("2d"),he={hole:{x:205,z:0,w:440,name:"Whole hole"},landing:{x:230,z:0,w:90,name:"Landing zone"},green:{x:392,z:0,w:42,name:"Green"},bunker:{x:372,z:-24,w:14,name:"Greenside bunker"}};function z(){let n=Math.min(devicePixelRatio,2),e=innerWidth,a=innerHeight;te.width=e*n,te.height=a*n,s.setTransform(n,0,0,n,0,0);let t=he[c.view],i=u("panel").getBoundingClientRect(),o=document.body.classList.contains("phone"),r=u("top").getBoundingClientRect().bottom+8,l=!o&&e>1e3,h=l?i.left-10:e,M=l||o?a:i.top-8,f=M-r>h*1.15,g=f?M-r:h,x=f?h:M-r,y=Math.min(g/t.w,x/(t.w*.5))*.95,m=d=>(d-t.x)*y,w=d=>(d-t.z)*y;s.fillStyle="#3f6d2f",s.fillRect(0,0,e,a),s.save(),s.translate(h/2,r+(M-r)/2),f&&s.rotate(-Math.PI/2);for(let d=-20;d<60;d++)s.fillStyle=d%2?"rgba(255,255,255,0.025)":"rgba(0,0,0,0.03)",s.fillRect(m(d*10),-2e3,10*y,4e3);let k=T.fairway;s.fillStyle="#5a9a40",s.beginPath(),s.roundRect(m(k.x0),w(-k.half),(k.x1-k.x0)*y,2*k.half*y,14*y),s.fill();for(let d=Math.floor(k.x0/12);d<k.x1/12;d++)d%2&&(s.fillStyle="rgba(255,255,255,0.05)",s.fillRect(m(d*12),w(-k.half),12*y,2*k.half*y));s.fillStyle="#5a9a40",s.fillRect(m(-6),w(-5),12*y,10*y),s.fillStyle="#66b04a",s.beginPath(),s.arc(m(T.green.x),w(T.green.z),T.green.r*y,0,7),s.fill();for(let d of T.bunkers)s.fillStyle="#e8d6a6",s.beginPath(),s.ellipse(m(d.x),w(d.z),d.rx*y,d.rz*y,0,0,7),s.fill();s.fillStyle="#111",s.beginPath(),s.arc(m(T.green.x),w(T.green.z),Math.max(2,.054*y),0,7),s.fill();let S=K(),$=b.state(S);for(let d of $){if(d.heal>=1)continue;let I=1-d.heal,Y=G(d.player),R=c.who&&d.player!==c.who,ce=R?.15:1,j=c.colour==="player"?Y.col:d.mendedAt===null?"#ef4444":d.by===d.player?"#22c55e":"#38bdf8";if(s.globalAlpha=ce*(.35+.65*I),d.type===p.DIVOT){let O=Math.max(2.5,d.size*y),B=Math.max(1.8,(d.width||.05)*y);s.save(),s.translate(m(d.x),w(d.z)),s.rotate(d.heading*Math.PI/180),s.fillStyle=c.colour==="player"?j:d.how==="replace"?"#7d9a52":d.how==="sand"?"#d7c28a":"#5a3d22",s.fillRect(-O/2,-B/2,O,B),c.colour!=="player"&&(s.strokeStyle=j,s.lineWidth=Math.max(.8,B*.15),s.strokeRect(-O/2,-B/2,O,B)),s.restore()}else if(d.type===p.PITCH){let O=Math.max(2,d.size*.5*y);s.fillStyle=d.mendedAt===null?"#2b4a1e":"#4f8f37",s.beginPath(),s.arc(m(d.x),w(d.z),O,0,7),s.fill(),s.strokeStyle=j,s.lineWidth=Math.max(1,O*.35),s.stroke()}else{let O=Math.max(1.5,(d.type===p.SPLASH?.18:.13)*y);s.fillStyle=c.colour==="player"?j:d.mendedAt===null?"#a1824f":"#e0cc98",s.beginPath(),s.ellipse(m(d.x),w(d.z),O,O*(d.type===p.SPLASH?.8:.45),(d.heading||0)*Math.PI/180,0,7),s.fill()}}s.globalAlpha=1,s.restore(),s.font="600 12px system-ui",s.fillStyle="rgba(255,255,255,0.85)",s.fillText(`${t.name} \xB7 ${c.colour==="player"?"coloured by who made each mark":"red: left \xB7 green: mended by its maker \xB7 blue: mended by someone else"}`,12,M-12),ge($,S)}var ee=n=>new Date(n*1e3).toLocaleDateString("en-GB",{day:"numeric",month:"short"});function ge(n,e){let a=n.filter(f=>f.heal<1),t=a.filter(f=>f.mendedAt===null),i=b.events.length*24,o=J(Math.floor((e-Date.UTC(new Date(e*1e3).getUTCFullYear(),0,1)/1e3)/A)),r=(f,g)=>f.filter(x=>x.type===g).length;u("stats").innerHTML=`<b>${P}</b> day${P===1?"":"s"} of play from ${ee(E[c.season])}; showing <b>${ee(e)}</b> evening (grass growing at ${Math.round(X(o)*100)}% of its best, mean ${o.toFixed(0)}\xB0C).<br>On the hole: ${r(a,p.DIVOT)} divots, ${r(a,p.PITCH)} pitch marks, ${r(a,p.FOOTPRINT)+r(a,p.SPLASH)} bunker marks still showing; <b>${t.length} never mended</b>. Log: <b>${b.events.length} records = ${(i/1024).toFixed(1)} KB</b>.${D?`<br>${D}`:""}`;let l=b.blame(e),h=Object.entries(l).sort((f,g)=>g[1].damage-f[1].damage);u("blame").innerHTML="<table><tr><th>Player</th><th>Made</th><th>Left open</th><th>Mended own</th><th>Mended others'</th><th>Damage left</th></tr>"+h.map(([f,g])=>{let x=G(+f);return`<tr data-id="${f}" class="${c.who==f?"sel":""}"><td><i style="background:${x.col}"></i>${x.name}${x.tidy!==void 0?` <span class="dim">${Math.round(x.tidy*100)}% tidy</span>`:""}</td><td>${g.made}</td><td>${g.open}</td><td>${g.ownFixed}</td><td>${g.othersFixed}</td><td>${(g.damage*1e4).toFixed(0)} cm\xB2</td></tr>`}).join("")+"</table>";for(let f of u("blame").querySelectorAll("tr[data-id]"))f.onclick=()=>{c.who=c.who==f.dataset.id?0:+f.dataset.id,u("theirs").textContent=c.who?`Make ${G(c.who).name} mend theirs`:"Pick a player in the table",z()};let M=u("dayIn");M.max=Math.max(0,P-1+60),M.value=c.now,u("dayV").textContent=P?`${ee(K())} (day ${c.now+1}${c.now>=P?", no more play":""})`:"\u2014"}function W(n,e,a,t){let i=u(n);i.innerHTML="";for(let[o,r]of Object.entries(e)){let l=document.createElement("button");l.textContent=r,l.dataset.k=o,l.className=String(c[a])===String(o)?"sel":"",l.onclick=()=>{c[a]=typeof c[a]=="number"?+o:typeof c[a]=="boolean"?o==="true":o,[...i.children].forEach(h=>h.classList.toggle("sel",h===l)),t&&t(o)},i.appendChild(l)}}W("views",Object.fromEntries(Object.entries(he).map(([n,e])=>[n,e.name])),"view",z);W("colours",{state:"Mended or not",player:"Who's to blame"},"colour",z);W("seasons",{summer:"Summer (from 29 June)",winter:"Winter (from 28 Dec)"},"season",()=>{de(),V(3)});W("wets",{.1:"Dry",.3:"Normal",.9:"Soaked"},"wet");W("keepers",{true:"Greenkeeper rakes & fills",false:"No greenkeeper"},"keeper");u("day1").onclick=()=>V(1);u("week").onclick=()=>V(7);u("phones").onclick=le;u("reset").onclick=()=>{de(),z()};u("rake").onclick=()=>N("rake");u("pitch").onclick=()=>N("pitch");u("divots").onclick=()=>N("divots");u("theirs").onclick=()=>c.who&&N("theirs");u("prune").onclick=()=>{D=`${b.prune(K())} records of fully healed marks dropped; every device does the same and agrees.`,z()};u("dayIn").oninput=n=>{c.now=+n.target.value,z()};for(let[n,e]of[["tPlay","pPlay"],["tFix","pFix"],["tView","pView"]])u(n).onclick=()=>{for(let[a,t]of[["tPlay","pPlay"],["tFix","pFix"],["tView","pView"]])u(a).classList.toggle("sel",a===n),u(t).classList.toggle("show",t===e);z()};u("info").onclick=()=>u("about").classList.add("show");u("about").onclick=n=>{n.target.id==="about"&&u("about").classList.remove("show")};u("hide").onclick=()=>{document.body.classList.toggle("min"),u("hide").textContent=document.body.classList.contains("min")?"Show":"Hide",z()};addEventListener("resize",z);V(3);window.__lab={P:c,playDays:V,fix:N,twoPhones:le,draw:z,get log(){return b},get done(){return ne}};})();
 </script>
 <!-- phone layout: on a small screen the controls fold away and the extra charts hide behind a button, so the demo
