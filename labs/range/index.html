@@ -1735,7 +1735,7 @@ const backOf = b => b.backSpin != null ? b.backSpin : b.spinRpm * Math.cos(b.axi
 const sideOf = b => b.sideSpin != null ? b.sideSpin : b.spinRpm * Math.sin(b.axisDeg * Math.PI / 180);
 // [metric, label, value of a ball, how to show it, unit]
 const LIVE = [["speed", "Ball", b => b.speedMph, f1, " mph"], ["launch", "Launch", b => b.vla, f1, "°"], ["dir", "Direction", b => b.hla, v => lr(v, "°"), ""],
-  ["spin", "Spin", b => b.spinRpm, f0, " rpm"], ["axis", "Axis", b => b.axisDeg, v => lr(v, "°"), ""], ["back", "Back", backOf, f0, ""], ["side", "Side", sideOf, v => lr(v), ""]];
+  ["spin", "Spin", b => b.spinRpm, f0, " rpm"], ["axis", "Axis", b => b.axisDeg, v => lr(v, "°"), ""], ["back", "Back", backOf, f0, ""], ["side", "Side", sideOf, v => v == null || !isFinite(v) ? "–" : Math.round(v) === 0 ? "0" : `${Math.abs(Math.round(v))} ${v > 0 ? "R" : "L"}`, ""]];
 function renderLive() {
   const el = $("live"), s = selected(), nd = needs();
   let h = "";
