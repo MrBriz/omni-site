@@ -738,13 +738,24 @@ const OG = (() => {
 //                                         with their own launch angle if they've set one
 //   OmniModel.fullCarry(player, club)     how far their full swing with it carries, flat and still
 //   OmniModel.aimOf(player), practiceTarget(player, club)   practice or Train; the target a shot counts for
+//   OmniModel.aimState(player), aimShows(before, after)     where the aim stands; which mode a page
+//                                         should show when it changes (Practice or Train), wherever it changed
 //   OmniModel.TRAIN, trainOf(player), trainWant(settings)    Train's games, a player's game and its target
+//   OmniModel.trainWindow(settings, shots, pid), trainWindows(...), trainVs(metric, value, window),
+//     trainResult(drill), trainRun(...), windowOf(want, tol), trainScore(player, shot, shots)   the window
+//                                         and the scoring, in numbers and words:
+//                                         the one place it's worked out, for every view and the connector
 //   OmniModel.fly(ball, opts)             a ball's flight, in yards (carry, total, apex, side, ...)
 //   OmniModel.flightOf(shot)              a recorded shot's flight (cached per shot); flights(shots)
-//   OmniModel.SWINGS                      full, ⅔, ⅓, pitch, chip: what a player says they're hitting
-//   OmniModel.OMNI_CODES[club], teeOf(shot)   the Omni's club codes; a shot's tee height (mm)
+//   OmniModel.SWINGS                      full, ⅔, ⅓, pitch, chip: what a player says they're hitting;
+//                                         swingFor(player, where): what a new shot is recorded with ("train" in Train);
+//                                         groupOf(shot): what it was hit as, for landing groups (a Train target, or its swing)
+//   OmniModel.OMNI_CODES[club]            the Omni's club codes
+//   OmniModel.fitMat(points), teeOf(shot, mats), spotOf(shot, player, mats)   the mat's level from
+//                                         balls resting on it; a shot's tee height and where the ball sat
 //   OmniModel.distances(player, shots, since)   per club and swing averages, as the Distances tab
 //   OmniModel.aimFor(player, club, want, opts)   all the numbers that go with a target (the aim)
+//   OmniModel.scorecard(round)            Omni Golf's card from a round on the NUC: holes, out/in/total, "+3 through 7"
 //   OmniModel.yd(m), metres(yd)           conversions; ydBetween(a, b): ground distance, [x, z] in m
 const OmniModel = (() => {
   // ------------------------------------------------------------------ units
@@ -803,11 +814,71 @@ const OmniModel = (() => {
   // The club codes the Omni takes (command 130: [code, group]); "Any club" is told to it as a 7 iron.
   const OMNI_CODES = { "Driver": [1, 0], "3 wood": [3, 1], "4 hybrid": [14, 1], "5 iron": [5, 2], "6 iron": [6, 2], "7 iron": [7, 2], "8 iron": [8, 2], "9 iron": [9, 2],
     "PW": [10, 2], "Gap wedge": [11, 2], "Sand wedge": [12, 2], "Lob wedge": [13, 2], "Putter": [1, 3], "diag": [7, 2] };
-  // Where the ball sat, from the Omni's ball-detected status: three numbers in mm, z the height of the
-  // ball's centre above the Omni's ground (on a mat about 23.6). Tee height: how far the bottom of the
-  // ball is above that ground (a ball's radius is 21.35 mm), so about 2 mm on a mat, more on a tee.
+  // Where the ball sat, from the Omni's ball-detected status: { x, y, z } in mm, in the Omni's own
+  // frame. Found by rolling a ball round the hitting area (24 Nov 2026), with the Omni beside the ball
+  // and the target to its right: x runs along the target line (+ towards the target), y across it (+
+  // away from the Omni, towards the golfer), and z is the height of the ball's centre. The area the
+  // Omni sees is about 25 cm square, centred on 0, 0.
+  //
+  // The mat: the Omni's z isn't level with the mat (it sits at a slight angle, or the mat slopes), so a
+  // ball resting on the mat reads anything from about 19.5 to 29 mm across the square. A calibration
+  // is a flat plane fitted to balls resting on the mat (fitMat): the centre height of a ball on the
+  // mat at each spot. Tee height is how far a ball's centre is above that: 0 on the mat. Calibrations
+  // are kept with the time they were made; a shot uses the one in effect when it was hit (the Omni
+  // may have been moved since).
   const BALL_R_MM = 21.35;
-  const teeOf = shot => (shot && shot.spot && shot.spot.z != null ? shot.spot.z - BALL_R_MM : null);
+  function fitMat(points) {
+    // points: [{ x, y, z }], settled readings of a ball resting on the mat (teed-up ones are left out)
+    const P = (points || []).filter(p => p && isFinite(p.x) && isFinite(p.y) && isFinite(p.z) && p.z < BALL_R_MM + 20);
+    const uniq = [...new Map(P.map(p => [`${Math.round(p.x / 5)},${Math.round(p.y / 5)}`, p])).values()]; // one per 5 mm spot, so a ball left in one place doesn't count many times
+    const span = k => (uniq.length ? Math.max(...uniq.map(p => p[k])) - Math.min(...uniq.map(p => p[k])) : 0);
+    if (uniq.length < 8 || span("x") < 120 || span("y") < 120)
+      return { ok: false, spots: uniq.length, spanX: span("x"), spanY: span("y"),
+        why: `needs the ball resting in at least 8 different spots spread over at least 12 × 12 cm (got ${uniq.length} spots over ${Math.round(span("x") / 10)} × ${Math.round(span("y") / 10)} cm)` };
+    // least squares: z = h0 + kx x + ky y
+    let n = 0, sx = 0, sy = 0, sz = 0, sxx = 0, syy = 0, sxy = 0, sxz = 0, syz = 0;
+    for (const { x, y, z } of uniq) { n++; sx += x; sy += y; sz += z; sxx += x * x; syy += y * y; sxy += x * y; sxz += x * z; syz += y * z; }
+    const A = [[n, sx, sy], [sx, sxx, sxy], [sy, sxy, syy]], b = [sz, sxz, syz];
+    const det = m => m[0][0] * (m[1][1] * m[2][2] - m[1][2] * m[2][1]) - m[0][1] * (m[1][0] * m[2][2] - m[1][2] * m[2][0]) + m[0][2] * (m[1][0] * m[2][1] - m[1][1] * m[2][0]);
+    const D = det(A), col = i => A.map((r, j) => r.map((v, k) => (k === i ? b[j] : v)));
+    const [h0, kx, ky] = [0, 1, 2].map(i => det(col(i)) / D);
+    const res = uniq.map(p => p.z - (h0 + kx * p.x + ky * p.y)), sd = Math.sqrt(res.reduce((a, r) => a + r * r, 0) / Math.max(1, n - 3));
+    const deg = k => Math.atan(k) * 180 / Math.PI;
+    const out = { ok: sd < 1.5, h0, kx, ky, spots: n, sd, worst: Math.max(...res.map(Math.abs)), spanX: span("x"), spanY: span("y"), tiltX: deg(kx), tiltY: deg(ky),
+      lowest: Math.min(...uniq.map(p => p.z)), highest: Math.max(...uniq.map(p => p.z)) };
+    if (!out.ok) out.why = `the readings don't lie on one flat mat (they scatter by ${sd.toFixed(1)} mm): was the ball on a tee or the mat creased?`;
+    return out;
+  }
+  const matAt = (mat, x, y) => mat.h0 + mat.kx * x + mat.ky * y;
+  // The calibration in effect at a time. Each belongs to a setup: when the Omni was switched on (it's
+  // set up afresh, maybe somewhere else, each time), so a shot uses its own setup's, else the newest
+  // before it, else the first there is.
+  const since_ = m => (m.setup != null ? m.setup : m.at || 0);
+  const matFor = (mats, ts) => {
+    const L = (Array.isArray(mats) ? mats : mats ? [mats] : []).filter(m => m && m.h0 != null).sort((a, b) => since_(a) - since_(b) || (a.at || 0) - (b.at || 0));
+    return L.filter(m => !ts || since_(m) <= ts).pop() || L[0] || null;
+  };
+  // A level from a few balls resting in much the same place (no tilt known): good near those spots.
+  function levelMat(points) {
+    const z = (points || []).map(p => p.z).filter(v => isFinite(v) && v < BALL_R_MM + 20).sort((a, b) => a - b);
+    if (z.length < 3) return { ok: false, spots: z.length, why: "needs a ball resting on the mat in at least 3 spots" };
+    return { ok: true, kind: "level", h0: z[Math.floor(z.length / 2)], kx: 0, ky: 0, spots: z.length, sd: sd(z) || 0, lowest: z[0], highest: z[z.length - 1] };
+  }
+  // A shot's tee height in mm (0: on the mat), or null if it has no ball position or there's no calibration
+  function teeOf(shot, mats) {
+    const sp = shot && shot.spot, mat = matFor(mats, shot && shot.ts);
+    return sp && sp.z != null && mat ? sp.z - matAt(mat, sp.x || 0, sp.y || 0) : null;
+  }
+  // Where the ball sat, in words that don't need the Omni's frame: mm towards the target and away from
+  // the Omni (towards the golfer), from the middle of the hitting area; right: mm to the right seen from
+  // behind the ball looking at the target (the Square app's view: the Omni is on the right for a
+  // right-hander); and the tee height. A left-hander's Omni faces the other way (not yet tried).
+  const SPOT_AREA_MM = 125; // the Omni sees about 25 cm square: ±125 mm each way from its middle
+  function spotOf(shot, player, mats) {
+    const sp = shot && shot.spot; if (!sp) return null;
+    const flip = player && player.hand === "L" ? -1 : 1;
+    return { towardsTarget: flip * sp.x, awayFromOmni: sp.y, right: -flip * sp.y, centreHeight: sp.z, tee: teeOf(shot, mats) };
+  }
 
   // ------------------------------------------------------------------ levels
   // LEVELS.LIST, byId[id]: the levels; profile(id)[club]: { club, ball (mph), launch, spin, est };
@@ -974,6 +1045,27 @@ const OmniModel = (() => {
   // What the player is aiming at, from their settings: "train" while a Train game is on, otherwise the
   // mode they last picked ("practice" or "train")
   const aimOf = player => { const s = (player && player.settings) || {}; return s.train && s.train.on ? "train" : s.aim === "train" ? "train" : "practice"; };
+  // Where the aim stands: the mode, whether it's started, and once started what it's at (Practice: the
+  // carry; Train: the game, its target, tolerance and in a row). Warm-ups left and the sound aren't part
+  // of it, so a shot never changes it.
+  function aimState(player) {
+    const mode = aimOf(player);
+    if (mode === "train") {
+      const st = trainOf(player);
+      return { mode, on: !!st.on, at: st.on ? [st.game, trainWant(st), st.tier, st.goal] : null };
+    }
+    const on = !!(player && player.practiceOn && player.practiceYd > 0);
+    return { mode, on, at: on ? player.practiceYd : null };
+  }
+  // The mode a page should show now the aim has gone from `before` to `after` (aimState's), or null to
+  // stay where it is: the new mode if it changed, or the mode if something in it was started or changed.
+  // Stopping leaves a page where it is. However the aim was changed (on the page, on another device, by
+  // the Omni connector), every open page follows it by this one rule.
+  function aimShows(before, after) {
+    if (!before || !after) return null;
+    if (before.mode !== after.mode) return after.mode;
+    return after.on && JSON.stringify([before.on, before.at]) !== JSON.stringify([after.on, after.at]) ? after.mode : null;
+  }
   // The practice target a shot with this club is recorded against: only while practice is on and they're
   // aiming at it. The NUC's recorder and Range Lab both use this.
   function practiceTarget(player, club) {
@@ -986,7 +1078,11 @@ const OmniModel = (() => {
   // the kinds of shot a player says they're hitting; each has its own distances
   const SWINGS = [{ id: "full", short: "Full", name: "Full swing" }, { id: "2/3", short: "⅔", name: "⅔ swing" }, { id: "1/3", short: "⅓", name: "⅓ swing" },
     { id: "pitch", short: "Pitch", name: "Pitch" }, { id: "chip", short: "Chip", name: "Chip" }];
-  const swingOf = s => (SWINGS.some(w => w.id === s.swing) ? s.swing : "full");
+  // A shot hit in Train is aimed at a number, not a swing length: it's recorded as "train" (and so never
+  // counts in a swing's distances). swingFor: the swing a new shot is recorded with, for every app and the NUC.
+  const TRAIN_SWING = "train";
+  const swingOf = s => (SWINGS.some(w => w.id === s.swing) || s.swing === TRAIN_SWING ? s.swing : "full");
+  const swingFor = (player, where) => where !== "game" && aimOf(player) === "train" ? TRAIN_SWING : (SWINGS.some(w => w.id === (player && player.swing)) ? player.swing : "full");
   const mean = a => a.length ? a.reduce((x, y) => x + y, 0) / a.length : null;
   const sd = a => { if (a.length < 2) return null; const m = mean(a); return Math.sqrt(a.reduce((x, y) => x + (y - m) ** 2, 0) / (a.length - 1)); };
   function stat(vals) { const v = vals.filter(x => x != null && isFinite(x)); return v.length ? { n: v.length, mean: mean(v), sd: sd(v), min: Math.min(...v), max: Math.max(...v) } : null; }
@@ -1099,18 +1195,295 @@ const OmniModel = (() => {
     return info;
   }
 
+  // ------------------------------------------------------------------ the tolerance window
+  // The one place a Train game's window is worked out: how far either side of the target counts, from
+  // the tolerance (Easy, Medium, Hard as a % of the target or in the metric's own units, or Mine from the
+  // player's warm-ups). Range Lab's scoring, live bar, game card and Train tab, and the Omni connector
+  // (omni_status, start_train, get_train), all read it from here, numbers and words alike.
+  // A window: { want, tol: [kind, value], half, lo, hi }; tol null (Mine not measured yet): no window.
+  const windowOf = (want, tol) => {
+    if (want == null || !tol || tol[1] == null) return null;
+    const half = tol[0] === "pct" ? Math.abs(want) * tol[1] / 100 : tol[1];
+    return { want, tol, half, lo: want - half, hi: want + half };
+  };
+  const inWindow = (v, w) => !!w && v != null && isFinite(v) && v >= w.lo - 1e-9 && v <= w.hi + 1e-9;
+  // A player's own tolerance for a metric (Mine): from their last warm-up shots, about the size that
+  // they'd hit three in four of; null until there are three
+  function trainMine(shots, pid, k) {
+    const m = TRAIN.METRICS[k];
+    const errs = drills(shots, pid).filter(s => { const d = s.target.drill; return d.warm && d.want && k in d.want && d.err && d.err[k] != null && isFinite(d.err[k]); })
+      .slice(-TRAIN.WARMUPS).map(s => { const d = s.target.drill; return m.kind === "pct" ? d.err[k] / Math.abs(d.want[k]) * 100 : d.err[k]; });
+    if (errs.length < 3) return null;
+    const t = 1.15 * Math.sqrt(errs.reduce((a, e) => a + e * e, 0) / errs.length);
+    if (m.kind === "pct") return Math.max(1, Math.round(t * 2) / 2);
+    return m.unit === "rpm" ? Math.max(50, Math.round(t / 10) * 10) : Math.max(0.3, Math.round(t * 10) / 10);
+  }
+  // The window for each number the game scores: { metric: window, or { want, tol: null } }
+  function trainWindow(st, shots, pid) {
+    const want = trainWant(st), out = {};
+    for (const k of Object.keys(want)) {
+      const v = st.tier === TRAIN.MINE ? trainMine(shots || [], pid, k) : TRAIN.METRICS[k].tiers[st.tier];
+      out[k] = windowOf(want[k], v == null ? null : [TRAIN.METRICS[k].kind, v]) || { want: want[k], tol: null, half: null, lo: null, hi: null };
+    }
+    return out;
+  }
+  // in words: a number as the windows show it (2 places for mph and degrees, whole rpm; L and R for the
+  // sideways ones), a window ("±5% (42.75–47.25 mph)") and a measured number against one ("0.45 mph short")
+  const trim = (v, dp) => String(+(Math.round(v * 10 ** dp) / 10 ** dp).toFixed(dp));
+  function trainNum(k, v) {
+    const m = TRAIN.METRICS[k], dp = m.unit === "rpm" ? 0 : 2, u = m.unit === "°" ? "°" : " " + m.unit;
+    if (v == null || !isFinite(v)) return "–";
+    if (!m.lrm) return trim(v, dp) + u;
+    const a = trim(Math.abs(v), dp);
+    return +a === 0 ? `0${u}` : `${a}${u} ${v > 0 ? "R" : "L"}`;
+  }
+  function trainWindowText(k, w) {
+    if (!w || !w.tol) return null;
+    const m = TRAIN.METRICS[k], u = m.unit === "°" ? "°" : " " + m.unit;
+    const pm = w.tol[0] === "pct" ? `±${trim(w.tol[1], 2)}%` : `±${trim(w.tol[1], 2)}${u}`;
+    const range = m.lrm ? `${trainNum(k, w.lo)} to ${trainNum(k, w.hi)}` : `${trim(w.lo, m.unit === "rpm" ? 0 : 2)}–${trainNum(k, w.hi)}`;
+    return `${pm} (${range})`;
+  }
+  const WAY = { speed: ["short", "over"], launch: ["low", "high"], back: ["low", "high"], spin: ["low", "high"], dir: ["too far L", "too far R"], side: ["too far L", "too far R"], axis: ["too far L", "too far R"] };
+  // a measured number against a window: { inside, by (how far outside it), text: "in" | "0.45 mph short" }
+  function trainVs(k, v, w) {
+    if (!w || v == null || !isFinite(v)) return null;
+    if (inWindow(v, w)) return { inside: true, by: 0, text: "in" };
+    const m = TRAIN.METRICS[k], low = v < w.lo, by = low ? w.lo - v : v - w.hi, u = m.unit === "°" ? "°" : " " + m.unit;
+    return { inside: false, by, text: `${trim(by, m.unit === "rpm" ? 0 : 2)}${u} ${WAY[k][low ? 0 : 1]}` };
+  }
+  // Every view's list of the game's windows: [{ metric, name, unit, want, wantText, lo, hi, tol, text }],
+  // text "Medium ±5% (42.75–47.25 mph)" (or how Mine is measured)
+  function trainWindows(st, shots, pid) {
+    const ws = trainWindow(st, shots, pid), tier = TRAIN.TIERS[st.tier];
+    return Object.entries(ws).map(([k, w]) => ({ metric: k, name: TRAIN.METRICS[k].name, unit: TRAIN.METRICS[k].unit, want: w.want, wantText: trainNum(k, w.want),
+      lo: w.lo, hi: w.hi, tol: w.tol, text: w.tol ? `${tier} ${trainWindowText(k, w)}` : `${tier}: your own range, from ${TRAIN.WARMUPS} warm-up shots` }));
+  }
+  // A game shot against the window it was scored with (the tolerance it keeps in its drill):
+  // [{ metric, value, valueText, inside, text }]; inside and text are null for a warm-up
+  function trainResult(drill) {
+    if (!drill || !drill.want) return null;
+    return Object.keys(drill.want).map(k => {
+      const e = drill.err && drill.err[k], v = e != null && isFinite(e) ? Math.round((drill.want[k] + e) * 100) / 100 : null;
+      const r = trainVs(k, v, drill.tol && drill.tol[k] ? windowOf(drill.want[k], drill.tol[k]) : null);
+      return { metric: k, value: v, valueText: trainNum(k, v), inside: r ? r.inside : null, text: r ? r.text : null };
+    });
+  }
+  // A measured number off a ball, for a Train metric (back and side spin worked out from the spin and
+  // its axis when the Omni didn't send them)
+  function trainValue(k, b) {
+    if (!b) return null;
+    const rad = (b.axisDeg || 0) * Math.PI / 180;
+    return { speed: b.speedMph, dir: b.hla, launch: b.vla, spin: b.spinRpm, axis: b.axisDeg,
+      back: b.backSpin != null ? b.backSpin : b.spinRpm * Math.cos(rad), side: b.sideSpin != null ? b.sideSpin : b.spinRpm * Math.sin(rad) }[k];
+  }
+  // Scoring a new shot in the player's Train game: the one place it's done. The NUC scores every shot it
+  // records (relay/omni_relay/recorder.py), so a game works with no page open and two pages can't score
+  // a shot twice; Range Lab scores only shots it makes itself (typed-in test shots, its own Bluetooth).
+  // Returns { drill, train } or null if the shot doesn't count: no game on, already scored, no ball, or
+  // played in Omni Golf. drill goes in shot.target.drill; train is the player's game settings after it
+  // (warm-ups count down), or null if they haven't changed. shots: the player's earlier shots (game
+  // shots are enough: for the run in progress and the Mine tolerance).
+  // A drill: { g, want, tol, tier, goal, hit, streak, err: {metric: measured - wanted}, done, warm, test, testRun }
+  function trainScore(player, shot, shots) {
+    const st = trainOf(player);
+    if (!st.on || !shot || !shot.ball || (shot.target && shot.target.drill) || shot.where === "game") return null;
+    const pid = player.id, g = TRAIN.GAMES.find(x => x.id === st.game), want = trainWant(st), test = shot.src === "manual";
+    const err = {};
+    for (const k of Object.keys(want)) { const v = trainValue(k, shot.ball); err[k] = v != null && isFinite(v) ? Math.round((v - want[k]) * 100) / 100 : null; }
+    if (st.warm > 0) return { drill: { g: g.id, want, warm: true, err, ...(test ? { test: true } : {}) }, train: { ...st, warm: st.warm - 1 } };
+    const win = trainWindow(st, shots, pid), tol = Object.fromEntries(Object.entries(win).map(([k, w]) => [k, w.tol]));
+    if (Object.values(tol).some(t => !t)) return { drill: { g: g.id, want, warm: true, err }, train: { ...st, warm: TRAIN.WARMUPS - 1 } }; // Mine with no range yet: warm up first
+    const hit = Object.keys(want).every(k => err[k] != null && inWindow(want[k] + err[k], win[k]));
+    const prevShot = drills(shots, pid).filter(x => !x.target.drill.warm).pop(), prev = prevShot && prevShot.target.drill;
+    const cont = prev && prev.g === g.id && sameWant(prev.want, want) && prev.tier === st.tier && prev.goal === st.goal && prev.hit && !prev.done;
+    const streak = hit ? (cont ? prev.streak + 1 : 1) : 0, testRun = test || !!(cont && prev.testRun);
+    return { drill: { g: g.id, want, tol, tier: st.tier, goal: st.goal, hit, streak, err, ...(streak >= st.goal ? { done: true } : {}), ...(test ? { test: true } : {}), ...(testRun ? { testRun: true } : {}) }, train: null };
+  }
+  // What a shot was hit as, for grouping where shots land: a Train game's target ("20 mph"), or else its
+  // swing length. So 20 mph and 50 mph Train shots group apart, not lumped together by club; practice and
+  // ordinary shots group by club and swing as before. { key, label, name, train }
+  function groupOf(shot) {
+    const d = shot && shot.target && shot.target.drill;
+    if (d && d.g && d.want) {
+      const g = TRAIN.GAMES.find(x => x.id === d.g);
+      return { key: `train:${d.g}:${JSON.stringify(d.want)}`, label: Object.keys(d.want).map(k => trainNum(k, d.want[k])).join(" · "), name: g ? g.name : d.g, train: true };
+    }
+    const w = swingOf(shot || {});
+    if (w === TRAIN_SWING) return { key: TRAIN_SWING, label: "Train, no game on", name: "Train", train: true };
+    const sw = SWINGS.find(x => x.id === w);
+    return { key: w, label: sw.name, name: sw.name, train: false };
+  }
+  // The run in progress at the game's target: { streak, goal, text: "3 of 5 in a row" }
+  function trainRun(st, shots, pid) {
+    const info = trainProgress(shots, pid, st.game, trainWant(st)), d = info.last && info.last.target.drill;
+    const n = d && d.tier === st.tier && d.goal === st.goal ? (d.done && !d.testRun ? d.goal : d.done ? 0 : d.streak || 0) : 0;
+    return { streak: n, goal: st.goal, text: `${n} of ${st.goal} in a row` };
+  }
+
+  // ------------------------------------------------------------------ a round's scorecard
+  // Omni Golf's card, from a round as the NUC keeps it (relay/omni_relay/data.py): the totals and the
+  // summary the game's Card shows ("+3 through 7 holes"), for the game and the Omni connector alike.
+  // Putts: the strokes played from the green (null where the strokes weren't logged).
+  function scorecard(round) {
+    if (!round) return null;
+    const holes = round.holes || [], card = round.card || {}, scores = card.scores || [], now = card.now || {}, log = card.strokes || {}, picked = new Set(card.pickedUp || []);
+    const rows = holes.map((h, i) => {
+      const n = i + 1, sc = scores[i] != null ? scores[i] : null, playing = !round.endedAt && now.hole === n && sc == null, st = log[n] || [];
+      return { hole: n, par: h.par, yards: h.yards, strokes: sc != null ? sc : playing ? (now.strokes || 0) : null, finished: sc != null, picked_up: picked.has(n),
+        playing, vs_par: sc != null ? sc - h.par : null, putts: st.length ? st.filter(x => x.lie === "green").length : null };
+    });
+    const sum = (a, f) => a.reduce((t, r) => t + (f(r) || 0), 0);
+    const part = a => ({ par: sum(a, r => r.par), yards: sum(a, r => r.yards), strokes: sum(a, r => (r.finished ? r.strokes : 0)) || null });
+    const done = rows.filter(r => r.finished), vs = sum(done, r => r.vs_par);
+    return { course: round.course, tees: round.tees || "", holes: rows,
+      out: rows.length > 9 ? part(rows.slice(0, 9)) : null, in: rows.length > 9 ? part(rows.slice(9)) : null, total: part(rows),
+      through: done.length, vs_par: done.length ? vs : null,
+      summary: done.length ? `${vs === 0 ? "Level par" : vs > 0 ? "+" + vs : vs} through ${done.length} hole${done.length > 1 ? "s" : ""}` : "No holes finished yet",
+      now: round.endedAt ? null : { hole: now.hole || null, shot: (now.strokes || 0) + 1, to_pin_yd: now.toPinYd ?? null, lie: now.lie || null },
+      started: round.startedAt || null, ended: round.endedAt || null };
+  }
+
   // A new player: the shape the NUC's database stores (relay/omni_relay/data.py)
   const newPlayer = (id, name) => ({ id, name, hand: "R", bag: ORDER.slice(), club: "7 iron", swing: "full", band: LEVELS.DEFAULT, practiceYd: 150, practiceOn: false, launch: {}, settings: {} });
 
-  return { YD, FT, MPS, yd, metres, ydBetween, CLUBS, ORDER, PUTTER, SHORT, SPECS, FLAT, fly, carryOf, LEVELS, ownLaunch, levelOf, numbers, bagOf, fullCarry, impactClubs, soleClubs, tour, BEAUFORT, flightOf, forget, SWINGS, swingOf, OMNI_CODES, BALL_R_MM, teeOf, flights: flights_, mean, sd, stat, distances, solved, aimFor, aimOf, practiceTarget, TRAIN, trainOf, trainWant, sameWant, drills, trainProgress, newPlayer };
+  return { YD, FT, MPS, yd, metres, ydBetween, CLUBS, ORDER, PUTTER, SHORT, SPECS, FLAT, fly, carryOf, LEVELS, ownLaunch, levelOf, numbers, bagOf, fullCarry, impactClubs, soleClubs, tour, BEAUFORT, flightOf, forget, SWINGS, swingOf, OMNI_CODES, BALL_R_MM, fitMat, levelMat, matAt, matFor, teeOf, spotOf, SPOT_AREA_MM, flights: flights_, TRAIN_SWING, swingFor, mean, sd, stat, distances, solved, aimFor, aimOf, aimState, aimShows, practiceTarget, TRAIN, trainOf, trainWant, sameWant, drills, trainProgress,
+    windowOf, inWindow, trainMine, trainWindow, trainWindows, trainNum, trainWindowText, trainVs, trainResult, trainRun, trainValue, trainScore, groupOf, scorecard, newPlayer };
+})();
+</script>
+<script data-omni-shared="link">
+// The Omni live link: a page's one connection to the NUC's live feed (/ws). Everything live a page gets
+// from the NUC comes over it: shots, the ball's position, the Omni's state, data changes (players, who's
+// playing), the Omni connector's commands. So there's one connection state per page, and the NUC knows
+// it (the page says so as it announces itself: shared/remote.js), which the connector reports.
+//
+// It looks after itself: it reconnects when the feed drops (backing off a little), straight away when the
+// page comes back on screen (an iPad drops a page's connections when it's in the background, e.g. while
+// James is in the Square app or taking a screenshot), and when it has heard nothing for a while (a ping
+// every 10 s; a connection that has gone quiet is closed and opened again). A page that wants shots can
+// ask to catch up: shots the NUC recorded while it was away are handed over when it's back ({ late: true }).
+//
+//   await OmniLink.start({ nuc })     opens the link if the page came from the NUC (true / false / ask)
+//   OmniLink.on(type, fn, { catchUp })   "shot", "ball", "status", "player", "command", ..., or "*" for all
+//   OmniLink.send(msg)                to the NUC; false when it's not connected
+//   OmniLink.status()                 { link: "online" | "connecting" | "offline", since, reconnects, omni, text, cls }
+//   OmniLink.onStatus(fn), onOpen(fn), onReport(fn)
+//   OmniLink.gotShot(shot, { played, why })   a page says what it did with a shot (reported to the NUC)
+//   OmniLink.reconnect()              drop the connection and make a new one, now
+//   OmniLink.report()                 what the page tells the NUC about its link and its last shot
+const OmniLink = (() => {
+  const WS = typeof WebSocket !== "undefined" ? WebSocket : null; // the browser's own (Range Lab wraps the ones made after it loads)
+  const PING_MS = 10000, QUIET_MS = 25000, BALL_FRESH_MS = 8000;
+  const pageId = Math.random().toString(36).slice(2, 10); // this page, as the NUC lists it
+  let sock = null, starting = null, on = false, state = "off", since = null, reconnects = 0, opened = 0, wait = 0, timer = 0, heard = 0;
+  let hub = null, ball = null, ballAt = 0, ballStale = true, seen = null, catching = false, lastShot = null, takesShots = false;
+  const subs = new Map(), catchUps = new Set(), statusSubs = new Set(), openSubs = new Set(), reportSubs = new Set();
+  const call = (set, ...a) => { for (const f of [...set]) try { f(...a); } catch (e) { console.error(e); } };
+  const url = () => `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/ws`;
+
+  // ---- the connection state, in words every page shows the same way
+  function status() {
+    const o = (hub && hub.omni) || {}, s = (hub && hub.standin) || {}, fresh = ball && Date.now() - ballAt < BALL_FRESH_MS;
+    const omni = { connected: o.status === "connected", status: o.status || null, run_by: o.status === "connected" ? (o.driven ? "the relay" : "the Square app") : null,
+      square_app: s.status === "connected", ready: fresh ? !!ball.ready : null, ball_seen: fresh ? !!ball.seen : null };
+    let text, cls;
+    if (state === "online") {
+      if (!omni.connected) { text = "Relay connected · waiting for Omni"; cls = "wait"; }
+      else if (omni.ball_seen && omni.ready) { text = "Omni ready · ball detected"; cls = "on"; }
+      else if (omni.ball_seen) { text = "Omni connected · ball settling"; cls = "on"; }
+      else { text = "Omni connected"; cls = "on"; }
+    } else if (state === "connecting" && !opened) { text = "Connecting to the relay…"; cls = "wait"; }
+    else { text = "Relay offline · reconnecting"; cls = "off"; }
+    return { link: state === "off" ? "off" : state, since, reconnects, omni, text, cls };
+  }
+  const setState = s => { if (s === state) return; state = s; since = Date.now(); call(statusSubs, status()); };
+  const report = () => ({ since: state === "online" ? since : null, reconnects, takes_shots: takesShots, last_shot: lastShot });
+
+  // ---- shots the NUC recorded while the page was away
+  async function catchUp(latest) {
+    if (!latest || latest.ts <= seen.ts) return;
+    if (!catchUps.size) { seen = latest; return; } // nothing here plays shots
+    if (catching) return;
+    catching = true;
+    try {
+      const r = await fetch(`/api/shots?since=${seen.ts + 1}`, { cache: "no-store" });
+      const j = await r.json(), list = (j && j.shots) || [];
+      for (const shot of list) { if (seen && shot.ts <= seen.ts) continue; seen = { id: shot.id, ts: shot.ts }; deliver({ type: "shot", shot, late: true }, true); }
+    } catch {} finally { catching = false; }
+  }
+  function deliver(ev, late = false) {
+    for (const [fn, opt] of subs.get(ev.type) || []) if (!late || opt.catchUp) try { fn(ev); } catch (e) { console.error(e); }
+    if (!late) for (const [fn] of subs.get("*") || []) try { fn(ev); } catch (e) { console.error(e); }
+  }
+
+  function connect() {
+    clearTimeout(timer);
+    if (sock) { const old = sock; sock = null; old.onopen = old.onmessage = old.onclose = old.onerror = null; try { old.close(); } catch {} }
+    setState("connecting");
+    let ws;
+    try { ws = sock = new WS(url()); } catch { return later(); }
+    ws.onopen = () => { if (sock !== ws) return; if (opened) reconnects++; opened++; wait = 0; heard = Date.now(); setState("online"); call(openSubs); };
+    ws.onmessage = m => {
+      if (sock !== ws) return;
+      heard = Date.now();
+      let ev; try { ev = JSON.parse(m.data); } catch { return; }
+      if (ev.type === "hello") { hub = ev.state || hub; const latest = ev.last_shot || null; if (!seen) seen = latest || { id: null, ts: 0 }; else catchUp(latest); } // the first: where this page starts
+      else if (ev.type === "status") hub = ev.state || hub;
+      else if (ev.type === "ball") { ball = ev; ballAt = Date.now(); ballStale = false; }
+      else if (ev.type === "shot" && ev.shot) seen = { id: ev.shot.id, ts: ev.shot.ts };
+      else if (ev.type === "pong") return;
+      deliver(ev);
+      if (ev.type === "hello" || ev.type === "status" || ev.type === "ball") call(statusSubs, status());
+    };
+    ws.onclose = () => { if (sock !== ws) return; sock = null; setState("offline"); later(); };
+    ws.onerror = () => {};
+  }
+  function later() { clearTimeout(timer); wait = Math.min(3000, wait + 1000); timer = setTimeout(connect, wait); }
+  const send = m => { if (sock && sock.readyState === 1) { try { sock.send(JSON.stringify(m)); return true; } catch {} } return false; };
+
+  async function start({ nuc } = {}) {
+    if (on) return true;
+    if (starting) return starting;
+    starting = (async () => {
+      if (!WS || nuc === false || typeof location === "undefined" || !/^https?:$/.test(location.protocol)) return false;
+      if (nuc !== true) { try { const r = await fetch("/api/info", { cache: "no-store" }); const j = await r.json(); if (!j || !j.omniHub) return false; } catch { return false; } }
+      on = true;
+      connect();
+      setInterval(() => {
+        if (state !== "online") return;
+        if (Date.now() - heard > QUIET_MS) { connect(); return; } // gone quiet: a connection the iPad left for dead
+        send({ type: "ping" });
+      }, PING_MS);
+      setInterval(() => { if (!ballStale && Date.now() - ballAt > BALL_FRESH_MS) { ballStale = true; call(statusSubs, status()); } }, 2000); // the Omni stopped looking
+      const back = () => { if (!document.hidden && state !== "online") { wait = 0; connect(); } };
+      document.addEventListener("visibilitychange", back);
+      addEventListener("pageshow", back);
+      addEventListener("online", back);
+      return true;
+    })();
+    return starting;
+  }
+
+  return {
+    start, send, status, report, reconnect: () => { if (on) { wait = 0; connect(); } },
+    get active() { return on; }, get id() { return pageId; },
+    on: (type, fn, opt = {}) => { if (!subs.has(type)) subs.set(type, []); subs.get(type).push([fn, opt]); if (type === "shot") { takesShots = true; if (opt.catchUp) catchUps.add(fn); } },
+    onStatus: f => { statusSubs.add(f); f(status()); }, onOpen: f => openSubs.add(f), onReport: f => reportSubs.add(f),
+    gotShot(shot, { played = true, why = null } = {}) {
+      if (!shot) return;
+      lastShot = { id: shot.id, ts: shot.ts, at: Date.now(), played: !!played, ...(why ? { why } : {}) };
+      call(reportSubs, report());
+    },
+  };
 })();
 </script>
 <script data-omni-shared="remote">
 // The Omni remote: lets the Omni connector (Claude, on a voice call) see and work any Omni page.
 //
-// Opened from the NUC, a page says what it is on the NUC's live feed, and is listed as open for as long
-// as the feed is; it carries out the commands the connector sends on the feed, and answers with what
-// happened. Opened anywhere else (a claude.ai artifact, GitHub Pages) it does nothing.
+// Opened from the NUC, a page says what it is on the NUC's live feed (its one link to the NUC,
+// shared/link.js), with how that link is doing and the last shot it got, and is listed as open for as
+// long as the link is; it carries out the commands the connector sends on the feed, and answers with
+// what happened. Opened anywhere else (a claude.ai artifact, GitHub Pages) it does nothing.
 //
 // Every page gets the same controls for free: the connector can list the buttons, sliders, boxes and
 // lists it can see, each by its label, press or set any of them, and read the page's text. An app can
@@ -1121,8 +1494,8 @@ const OmniModel = (() => {
 //   OmniRemote.action("show_tab", "Open a tab", ({ tab }) => ..., { tab: "shot, shots, dist, ..." })
 //   OmniRemote.state(() => ({ ... }))                      what the connector gets as the app's state
 const OmniRemote = (() => {
-  const id = Math.random().toString(36).slice(2, 10);
-  let app = null, on = false, sock = null;
+  const id = OmniLink.id;
+  let app = null, on = false;
   const actions = {}, states = [];
   const clean = s => String(s || "").replace(/\s+/g, " ").trim();
   const shown = el => !!(el && el.getClientRects().length && getComputedStyle(el).visibility !== "hidden");
@@ -1180,8 +1553,15 @@ const OmniRemote = (() => {
     }
   }
   const strip = c => { const { el, ...rest } = c; return rest; };
+  // What the page shows, as text: only what can be seen. innerText already leaves out what's hidden, but
+  // not what has faded out (opacity 0, like an old message that's gone), so that's hidden while it's read.
   function text(max = 6000) {
-    const t = clean(document.body.innerText || "");
+    const faded = [];
+    for (const el of document.body.querySelectorAll("*")) {
+      if (el.textContent && el.textContent.trim() && getComputedStyle(el).opacity === "0") { faded.push([el, el.style.visibility]); el.style.visibility = "hidden"; }
+    }
+    let t;
+    try { t = clean(document.body.innerText || ""); } finally { for (const [el, v] of faded) el.style.visibility = v; }
     return t.length > max ? t.slice(0, max) + " …" : t;
   }
   function appState() { const s = {}; for (const f of states) { try { Object.assign(s, f() || {}); } catch (e) { s.error = String(e); } } return s; }
@@ -1210,28 +1590,23 @@ const OmniRemote = (() => {
   async function post(path, body) {
     try { await fetch(path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body), keepalive: true }); } catch {}
   }
-  const send = m => { if (sock && sock.readyState === 1) { sock.send(JSON.stringify(m)); return true; } return false; };
-  function announce() { if (on) send({ type: "page", page: id, app, title: document.title, path: location.pathname, actions: Object.keys(actions), visible: !document.hidden }); }
+  const send = OmniLink.send;
+  function announce() { if (on) send({ type: "page", page: id, app, title: document.title, path: location.pathname, actions: Object.keys(actions), visible: !document.hidden, link: OmniLink.report() }); }
   const answer = m => send({ type: "reply", ...m }) || post("/api/pages/reply", m);
 
   async function start(name, { nuc } = {}) {
     if (on) return;
     app = name || document.title;
-    if (nuc === false || !/^https?:$/.test(location.protocol)) return;
-    if (nuc !== true) { try { const r = await fetch("/api/info", { cache: "no-store" }); const j = await r.json(); if (!j || !j.omniHub) return; } catch { return; } }
+    if (!(await OmniLink.start({ nuc }))) return;
     on = true;
-    const connect = () => {
-      const ws = sock = new WebSocket(`${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/ws`);
-      ws.onmessage = async m => {
-        let ev; try { ev = JSON.parse(m.data); } catch { return; }
-        if (ev.type !== "command" || !(ev.to === id || ev.to === "*")) return;
-        try { answer({ id: ev.id, page: id, ok: true, result: await run(ev) }); }
-        catch (e) { answer({ id: ev.id, page: id, ok: false, error: String(e && e.message || e) }); }
-      };
-      ws.onopen = announce;
-      ws.onclose = () => setTimeout(connect, 3000);
-    };
-    connect();
+    OmniLink.on("command", async ev => {
+      if (!(ev.to === id || ev.to === "*")) return;
+      try { answer({ id: ev.id, page: id, ok: true, result: await run(ev) }); }
+      catch (e) { answer({ id: ev.id, page: id, ok: false, error: String(e && e.message || e) }); }
+    });
+    OmniLink.onOpen(announce);   // (again) each time the link comes up
+    OmniLink.onReport(announce); // and when it gets a shot, so the connector can see it did
+    if (OmniLink.status().link === "online") announce();
     document.addEventListener("visibilitychange", announce);
   }
   return { start, action: (name, description, fn, params = {}) => { actions[name] = { description, fn, params }; }, state: f => states.push(f), describe, run, get page() { return id; } };
